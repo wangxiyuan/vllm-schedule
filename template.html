@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="zh" style="color-scheme:dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0b0e14">
+<title>vLLM Scheduler 调度可视化 · 交互式教程</title>
+<style>
+:root{
+  --bg:#0b0e14; --panel:#121724; --panel2:#171e2e; --panel3:#1d2638;
+  --line:#26304a; --line2:#33405f;
+  --txt:#dbe4f5; --muted:#8494b0; --faint:#5d6b85;
+  --accent:#4f8ff7; --accent2:#7ab0ff;
+  --cpu:#4f8ff7; --gpu:#b07cf7; --py:#ffb84f;
+  --ok:#35d07f; --warn:#ffc53d; --err:#ff6b6b; --preempt:#ff5f5f;
+  --null:#ff7a9c;
+  --radius:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;padding:18px;max-width:1280px;margin:0 auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+h1{font-size:19px;text-wrap:balance}
+h2{font-size:15px;text-wrap:balance;scroll-margin-top:12px}
+h3,h4{font-size:13px;scroll-margin-top:12px}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent2);outline-offset:2px;border-radius:6px}
+a.skip{position:absolute;left:-999px;top:8px;background:var(--accent);color:#fff;padding:8px 14px;border-radius:8px;z-index:99}
+a.skip:focus{left:8px}
+.sub{color:var(--muted);font-size:12px;margin:4px 0 14px}
+.tnum{font-variant-numeric:tabular-nums}
+.badge{font-size:11px;padding:3px 9px;border-radius:10px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.badge b{color:var(--txt)}
+
+/* ---------- guide ---------- */
+.guide{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+.guide-head{width:100%;text-align:left;padding:10px 14px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;color:var(--accent2)}
+.guide-head:hover{background:var(--panel2)}
+.guide-head .arrow{margin-left:auto;transition:transform .2s ease}
+.guide-head.open .arrow{transform:rotate(90deg)}
+.guide-body{padding:2px 14px 14px;font-size:12px;color:#c3cee0}
+.guide-body p{margin-bottom:8px;line-height:1.65}
+.guide-body code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+.glossary{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:8px;margin-top:8px}
+.gcell{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.55}
+.gcell b{color:var(--accent2)}
+.guide-body kbd{background:var(--panel3);border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:10px;font-family:ui-monospace,monospace}
+
+/* ---------- scene bar ---------- */
+.scenebar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1;min-width:0}
+.grp{color:var(--faint);font-size:11px;margin:0 6px;letter-spacing:.04em;white-space:nowrap}
+.tab{padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:13px;color:var(--muted)}
+.tab:hover{background:var(--panel2);color:var(--txt)}
+.tab.active{font-weight:600;color:var(--txt);border-color:var(--accent);background:rgba(79,143,247,.12)}
+.tab .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.scene-nav{display:flex;gap:6px}
+.scene-nav button{padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12px}
+.scene-nav button:hover{background:var(--panel2);color:var(--txt)}
+.scene-nav button:disabled{opacity:.4;cursor:default}
+
+/* ---------- story ---------- */
+.story{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.story .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.story-badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:12px;letter-spacing:.05em;background:rgba(79,143,247,.15);color:var(--accent2);border:1px solid var(--accent)}
+.story-badge.init{background:rgba(125,138,165,.18);color:var(--muted);border-color:var(--line2)}
+.story-badge.loop{background:rgba(255,107,107,.15);color:var(--err);border-color:var(--err)}
+.story-badge.done{background:rgba(53,208,127,.15);color:var(--ok);border-color:var(--ok)}
+.story-title{font-size:15px;font-weight:600;flex:1;min-width:0;overflow-wrap:anywhere}
+.loopbadge{font-size:12px;padding:3px 10px;border-radius:10px;white-space:nowrap}
+.loopbadge.loop{background:rgba(255,107,107,.15);color:var(--err)}
+.loopbadge.done{background:rgba(53,208,127,.15);color:var(--ok)}
+.expl{list-style:none;margin-top:2px}
+.expl li{font-size:12.5px;color:#c3cee0;padding:3px 0 3px 12px;border-left:2px solid var(--line2);margin:5px 0}
+.expl li b{color:var(--txt)}
+.expl li code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+.evchips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.evchip{font-size:11px;padding:3px 9px;border-radius:10px;border:1px solid}
+.evchip.scheduled{border-color:var(--ok);background:rgba(53,208,127,.1);color:var(--ok)}
+.evchip.preempted{border-color:var(--preempt);background:rgba(255,95,95,.1);color:var(--preempt)}
+.evchip.finished{border-color:var(--muted);background:rgba(132,148,176,.12);color:var(--muted)}
+.evchip b{color:#fff}
+
+/* ---------- controls ---------- */
+.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;touch-action:manipulation}
+.controls button{padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:13px}
+.controls button:hover{background:var(--panel3)}
+.controls button.play{background:rgba(53,208,127,.15);border-color:var(--ok);color:var(--ok);font-weight:600;min-width:96px}
+.controls button.icon{min-width:40px}
+.speed{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-left:4px}
+.speed select{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 8px;font-size:12px}
+.stepinfo{font-size:12.5px;color:var(--muted);margin-left:auto;overflow-wrap:anywhere}
+.stepinfo b{color:var(--txt)}
+.keyhint{font-size:10.5px;color:var(--faint);margin-left:auto}
+.keyhint kbd{background:var(--panel3);border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:10px;font-family:ui-monospace,monospace}
+
+/* ---------- scrubber + markers ---------- */
+.scrub{margin-bottom:14px}
+#range{width:100%;accent-color:var(--accent);display:block}
+.markers{display:flex;gap:3px;margin-top:7px;align-items:center;min-height:14px}
+.pip{flex:1;height:10px;border-radius:3px;padding:0;min-width:0;border:1px solid var(--line);background:var(--panel3);opacity:.85}
+.pip:hover{opacity:1;transform:scaleY(1.5);transition:transform .12s ease,opacity .12s ease}
+.pip.active{outline:2px solid var(--accent2);outline-offset:1px;opacity:1}
+.pip.mk-sched{background:var(--cpu)}
+.pip.mk-spec{background:var(--gpu)}
+.pip.mk-preempt{background:var(--preempt)}
+.pip.mk-finish{background:var(--muted)}
+.pip.mk-done{background:var(--ok)}
+.pip.mk-loop{background:repeating-linear-gradient(45deg,var(--err),var(--err) 3px,var(--panel3) 3px,var(--panel3) 6px)}
+.mklegend{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--faint);margin-left:auto}
+.mklegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.scrub-foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:5px}
+
+/* ---------- stable stage ---------- */
+/* Fixed-height "canvas": the page height never changes while stepping, so the
+   viewport cannot jump. Content overflows inside the stage instead. */
+.stage{height:clamp(460px,66vh,760px);overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);padding:12px 14px;margin-bottom:12px}
+.stage.flow{height:auto;overflow:visible;overscroll-behavior:auto;border:none;border-radius:0;padding:0;background:transparent}
+.stage .story{margin-bottom:12px}
+.stage .legendbar{margin-bottom:0}
+
+/* ---------- worlds ---------- */
+.worlds{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;min-width:0}
+.panel-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.panel-head h3{font-size:13px}
+.panel-head .hint{margin-left:auto;font-size:10.5px;color:var(--faint)}
+.tag{font-size:10px;padding:2px 8px;border-radius:8px;font-weight:700;letter-spacing:.03em}
+.tag.cpu{background:rgba(79,143,247,.15);color:var(--cpu);border:1px solid var(--cpu)}
+.tag.gpu{background:rgba(176,124,247,.15);color:var(--gpu);border:1px solid var(--gpu)}
+.budget{font-size:11px;color:var(--muted);margin-bottom:10px}
+.budget b{color:var(--txt)}
+.delta{font-size:10px;padding:1px 7px;border-radius:8px;background:rgba(53,208,127,.1);color:var(--ok);border:1px solid rgba(53,208,127,.35);white-space:nowrap}
+.delta.warn{background:rgba(255,197,61,.1);color:var(--warn);border-color:rgba(255,197,61,.35)}
+h4{font-size:12px;color:var(--accent2);margin:12px 0 6px;font-weight:600}
+h4 .hint{font-weight:400;color:var(--faint);font-size:10.5px;margin-left:6px}
+
+/* queues */
+.queues{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px}
+.q{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-width:0}
+.qlabel{font-size:10.5px;color:var(--faint);display:block;margin-bottom:4px;letter-spacing:.03em}
+.qlabel .cap{color:var(--muted)}
+.qbody{display:flex;gap:4px;flex-wrap:wrap;min-width:0}
+.qchip{font-size:11px;padding:2px 8px;border-radius:8px;background:var(--panel3);border:1px solid var(--line);overflow-wrap:anywhere}
+.qchip.new{animation:qin .5s ease}
+@keyframes qin{0%{transform:scale(.6);opacity:.2}100%{transform:scale(1);opacity:1}}
+.qchip.leave{opacity:.35;text-decoration:line-through}
+
+/* request cards */
+.reqlist{display:flex;flex-direction:column;gap:6px}
+.req{width:100%;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:block}
+.req:hover{border-color:var(--line2)}
+.req.sel{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2)}
+.req.sched{animation:flash 1.2s ease 2;border-color:var(--accent)}
+.req.preempt{border-color:var(--preempt)}
+.req.finish{opacity:.55}
+.req.dim{opacity:.35}
+@keyframes flash{0%,100%{background:var(--panel2)}50%{background:rgba(79,143,247,.22)}}
+.req .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;gap:8px}
+.req .rid{font-weight:700}
+.st{font-size:10.5px;padding:2px 8px;border-radius:8px;white-space:nowrap}
+.st-RUNNING{background:rgba(53,208,127,.15);color:var(--ok)}
+.st-WAITING{background:rgba(132,148,176,.2);color:var(--txt)}
+.st-PREEMPTED{background:rgba(255,95,95,.15);color:var(--preempt)}
+.st-WAITING_FOR_REMOTE_KVS,.st-WAITING_FOR_STREAMING_REQ,.st-WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR{background:rgba(255,197,61,.15);color:var(--warn)}
+.bar{display:block;background:#0a0e16;border-radius:4px;height:15px;position:relative;overflow:hidden}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
+.bar .vals{position:absolute;inset:0;font-size:10px;color:#fff;display:flex;align-items:center;justify-content:center;text-shadow:0 1px 2px rgba(0,0,0,.8);font-variant-numeric:tabular-nums}
+.req .meta{font-size:10.5px;color:var(--muted);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;overflow-wrap:anywhere}
+.req .meta .ph{color:var(--gpu)}
+.req .meta .chunk{color:var(--warn)}
+
+/* block pool */
+.pool{display:flex;flex-wrap:wrap;gap:4px}
+.blk{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;border:1px solid var(--line);color:#fff;position:relative}
+.blk.free{background:#0a0e16;color:var(--muted)}
+.blk.cached{outline:2px solid var(--warn);outline-offset:-1px}
+.blk.null{background:repeating-linear-gradient(45deg,#3a1220,#3a1220 3px,#2a0c16 3px,#2a0c16 6px);border-color:#6b2a3a;color:var(--null);font-weight:700}
+.blk.new{animation:ring 1s ease 2}
+.blk.sel{outline:2px solid #fff;outline-offset:1px;z-index:1}
+.blk.dim{opacity:.3}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(79,143,247,0)}50%{box-shadow:0 0 0 3px rgba(79,143,247,.6)}}
+.blk .tip{display:none;position:absolute;bottom:28px;left:50%;transform:translateX(-50%);background:#000;border:1px solid var(--line2);padding:4px 8px;border-radius:6px;font-size:10px;white-space:nowrap;z-index:20}
+.blk:hover .tip{display:block}
+.poolhint{font-size:10.5px;color:var(--faint);margin-top:6px}
+
+/* gpu: block table / slot mapping */
+.btrow,.smrow{display:flex;gap:6px;align-items:center;font-size:11.5px;margin-bottom:3px;flex-wrap:wrap}
+.btrow .rid,.smrow .rid{width:26px;font-weight:700;flex-shrink:0}
+.btrow.sel,.smrow.sel{background:rgba(79,143,247,.12);border-radius:6px;padding:1px 4px}
+.smrow .slots{display:flex;gap:3px;flex-wrap:wrap;min-width:0}
+.slotchip{font-size:9.5px;padding:1px 5px;border-radius:6px;background:var(--panel3);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.ibline{font-size:11px;color:var(--muted);margin-top:2px}
+.ibline b{color:var(--txt)}
+
+/* KV cache grid */
+.kvhead-row{display:flex;align-items:center;gap:10px;margin:2px 0 8px;flex-wrap:wrap}
+.toggle{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none}
+.toggle input{accent-color:var(--accent)}
+.kvgrid{display:flex;flex-wrap:wrap;gap:8px}
+.kvblock{border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#0a0e16;content-visibility:auto;contain-intrinsic-size:300px 40px;max-width:100%}
+.kvblock.sel-block{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2)}
+.kvbhead{font-size:9px;color:var(--muted);text-align:center;padding:2px 0;border-bottom:1px solid var(--line);background:#0d1220}
+.kvbhead b{color:var(--txt)}
+.kvblock.null{border-color:#6b2a3a;background:#1a0810}
+.kvblock.null .kvbhead{color:var(--null);background:#230813}
+.cells{display:flex;overflow-x:auto;max-width:100%}
+.kvblock .cell{width:var(--cell,26px);height:var(--cell,26px);flex-shrink:0;display:flex;align-items:center;justify-content:center;border-right:1px solid var(--line);border-bottom:1px solid var(--line);position:relative;font-size:10px;color:#fff;background:#121a2b;overflow:hidden;line-height:1}
+.kvblock .cell:last-child{border-right:none}
+.kvblock .cell.empty{background:#0a0e16;color:transparent}
+.kvblock .cell.null{background:repeating-linear-gradient(45deg,#2a0c16,#2a0c16 3px,#330f1c 3px,#330f1c 6px);border-color:#4a1a28}
+.kvblock .cell.nsel{opacity:.18}
+.kvblock .cell.sel{outline:2px solid #fff;outline-offset:-2px;z-index:1}
+.celltok{font-weight:700;line-height:1;padding:1px 3px;border-radius:3px;display:inline-block;transform-origin:center}
+.cell.new .celltok{animation:pop .45s ease}
+@keyframes pop{0%{transform:scale(.3);opacity:.2}70%{transform:scale(1.18)}100%{transform:scale(1);opacity:1}}
+.cellrid{position:absolute;top:1px;left:2px;font-size:7px;line-height:1;opacity:.95}
+.cellslot{position:absolute;right:1px;bottom:1px;font-size:6px;color:rgba(255,255,255,.35);font-style:normal;font-variant-numeric:tabular-nums}
+.kvfoot{font-size:10.5px;color:var(--faint);margin-top:8px;line-height:1.6}
+.kvfoot b{color:var(--muted)}
+
+/* special views */
+.special{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--gpu);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.special h3{font-size:13px;margin-bottom:8px}
+.special .legend{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6}
+.dp .row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;flex-wrap:wrap}
+.dp .row code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+.flag{padding:2px 8px;border-radius:8px;font-weight:600;font-size:11px}
+.flag.on{background:rgba(53,208,127,.15);color:var(--ok)}
+.flag.off{background:rgba(132,148,176,.2);color:var(--muted)}
+.pdcontainer{display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;margin-bottom:8px}
+.pdnode{border:1px solid var(--line);border-radius:10px;padding:10px;flex:1;min-width:230px;background:var(--panel2)}
+.pdn-prod{border-top:3px solid var(--cpu)}
+.pdn-cons{border-top:3px solid var(--gpu)}
+.pdtitle{font-size:12px;font-weight:600;margin-bottom:8px}
+.pdtitle small{color:var(--muted);font-weight:400}
+.pdarrow{display:flex;align-items:center;color:var(--faint);font-size:22px;font-weight:700}
+.pdarrow.transfer{color:var(--warn)}
+.pdreq{background:#0a0e16;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px}
+.pdhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;font-size:12px}
+.pdmeta{font-size:11px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.pdmeta .chunk{color:var(--warn);font-size:10px;border:1px solid var(--warn);border-radius:6px;padding:0 4px;margin-left:4px}
+.pdtransfer{background:rgba(255,197,61,.12);border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px}
+.note{font-size:12px;color:var(--muted);padding:8px 0}
+
+/* ---------- legend ---------- */
+.legendbar{display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--faint);border-top:1px solid var(--line);padding-top:10px}
+.legendbar .lg{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
+.legendbar .lgs{display:flex;gap:5px;flex-wrap:wrap}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;border:1px solid var(--line)}
+.sw.req{width:12px;height:12px;border-radius:50%}
+
+/* Disable native scroll anchoring inside re-rendered regions so the JS
+   section-anchor restore below is the only thing that moves the viewport. */
+#main{overflow-anchor:none}
+
+@media (max-width:960px){.worlds{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到可视化内容</a>
+
+<header>
+  <h1>vLLM Scheduler · 调度过程可视化</h1>
+  <p class="sub">驱动真实 vLLM Scheduler / AsyncScheduler（无需 GPU）· 逐步动画演示调度决策、CPU 对象与 GPU 张量变化、KV 缓存生命周期</p>
+</header>
+
+<div class="guide" id="guide">
+  <button class="guide-head" id="guideHead" aria-expanded="true" aria-controls="guideBody">
+    📖 使用引导 &amp; 术语表 <span class="arrow">▶</span>
+  </button>
+  <div class="guide-body" id="guideBody">
+    <p><b>怎么读这个教程：</b> 顶部选场景 → 中间的<b>「本步发生了什么」</b>逐帧讲解 →
+      下面的 <b>CPU 侧</b>（调度器 Python 对象）与 <b>GPU 侧</b>（模拟张量）面板展示对应状态。
+      被<b>高亮/闪烁</b>的元素就是<b>本步发生的变化</b>——先看讲解，再看高亮，最后看全貌。</p>
+    <p><b>每一帧 = 调度器的一次 <code>schedule()</code></b>（产生调度决策）和随后的
+      <code>update_from_output()</code>（应用模型输出）。帧反映「调度后、更新前」的瞬间。</p>
+    <p><b>时间线圆点</b>的颜色表示该步事件：<span style="color:var(--cpu)">蓝=prefill 调度</span>、
+      <span style="color:var(--gpu)">紫=投机 draft</span>、<span style="color:var(--preempt)">红=抢占</span>、
+      <span style="color:var(--muted)">灰=完成</span>、<span style="color:var(--ok)">绿=全部完成</span>。
+      一眼看到整个场景的「剧情走向」。</p>
+    <p><b>交互：</b> 点请求卡片可高亮它的 KV 块与缓存格；点块池方块可跳到对应缓存块。
+      键盘 <kbd>←</kbd><kbd>→</kbd> 上/下一步，<kbd>空格</kbd> 播放/暂停，<kbd>Home</kbd>/<kbd>End</kbd> 首/尾步。
+      链接带 <code>#场景/步数</code>，可分享或刷新后保持位置。
+      播放时勾选<b>「跟随写入」</b>，画面会自动跟着新写入的缓存块走；
+      勾选<b>「固定视口」</b>（默认）时，讲解与面板放进高度恒定的可视区，页面不随步进跳动，
+      内容在可视区内滚动——取消勾选则回到流式长页面。</p>
+    <div class="glossary">
+      <div class="gcell"><b>CPU 侧</b>调度器里的 Python 对象：每个 <code>Request</code> 的
+        进度（computed/total token）、状态、所在队列；KV 块池的占用。</div>
+      <div class="gcell"><b>GPU 侧</b>模拟的张量（不真占显存）：<code>BlockTable</code>
+        （每请求的 KV 块行）、<code>slot_mapping</code>（CPU 块 → GPU slot）、
+        <code>InputBatch</code>。</div>
+      <div class="gcell"><b>block</b>KV 缓存的最小分配单元，固定 <code>block_size</code> 个 token。
+        每个 block 有 <code>block_size</code> 个 slot，每个 slot 存一个 token 的 KV。
+        块池的第 0 块是 <b>null block（哨兵占位块）</b>，不存 KV、不参与分配，真实块从 blk 1 编号开始。</div>
+      <div class="gcell"><b>prefill / decode</b>prefill 计算整个 prompt 的 KV；decode 每步只算 1 个新
+        输出 token 的 KV。chunked prefill 把长 prompt 拆多步。</div>
+      <div class="gcell"><b>num_computed_tokens</b>该请求已算出 KV 的 token 数（进度条）。
+        prefix cache 命中时会从命中处直接跳进。</div>
+      <div class="gcell"><b>slot</b>每个 token 在 KV cache 里的位置 = block_id × block_size + 块内偏移。
+        格子柜里<b>放大弹出</b>的格子 = 本步刚写入的新 token。</div>
+      <div class="gcell"><b>max_num_batched_tokens</b>每步最多调度的 token 数；
+        <code>max_num_running_reqs</code> 同时运行的请求数上限。</div>
+      <div class="gcell"><b>preemption（抢占）</b>KV 池不足时，请求被驱逐回 waiting，
+        其 num_computed_tokens 清零，已分配 block 释放。</div>
+    </div>
+  </div>
+</div>
+
+<div class="scenebar">
+  <div class="tabs" id="tabs" role="tablist" aria-label="调度场景"></div>
+  <div class="scene-nav">
+    <button id="prevScene" aria-label="上一个场景">‹ 上一个</button>
+    <button id="nextScene" aria-label="下一个场景">下一个 ›</button>
+  </div>
+</div>
+
+<main id="main" role="tabpanel" aria-label="场景内容">
+  <div class="controls" role="group" aria-label="播放控制">
+    <button class="icon" id="firstBtn" aria-label="跳到第一步" title="回到第一步 (Home)">⏮</button>
+    <button id="prevBtn" title="上一步 (←)">◀ 上一步</button>
+    <button class="play" id="playBtn" aria-label="自动播放">▶ 播放</button>
+    <button id="nextBtn" title="下一步 (→)">下一步 ▶</button>
+    <button class="icon" id="lastBtn" aria-label="跳到最后一步" title="跳到最后一步 (End)">⏭</button>
+    <label class="speed" for="speedSel">速度
+      <select id="speedSel">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+      </select>
+    </label>
+    <span class="stepinfo tnum" id="stepinfo" title="当前步 / 总步数（不含初始状态帧）"></span>
+    <span class="loopbadge" id="loopBadge"></span>
+    <span class="keyhint">键盘 <kbd>←</kbd><kbd>→</kbd> 步进 · <kbd>空格</kbd> 播放 · <kbd>Home</kbd>/<kbd>End</kbd> 首尾</span>
+  </div>
+
+  <div class="scrub" id="scrub">
+    <input type="range" id="range" min="0" max="0" value="0" aria-label="步骤进度">
+    <div class="markers" id="markers" role="group" aria-label="步骤事件时间线"></div>
+    <div class="scrub-foot">
+      <label class="toggle"><input type="checkbox" id="followCk">播放时跟随写入</label>
+      <label class="toggle"><input type="checkbox" id="stageCk" checked>固定视口（防跳动）</label>
+      <div class="mklegend">
+        <span><i style="background:var(--cpu)"></i>prefill</span>
+        <span><i style="background:var(--gpu)"></i>draft</span>
+        <span><i style="background:var(--preempt)"></i>抢占</span>
+        <span><i style="background:var(--muted)"></i>完成</span>
+        <span><i style="background:var(--panel3)"></i>空闲</span>
+        <span><i style="background:var(--ok)"></i>全部完成</span>
+        <span><i style="background:repeating-linear-gradient(45deg,var(--err),var(--err) 3px,var(--panel3) 3px,var(--panel3) 6px)"></i>循环</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <section class="story" id="story" aria-live="polite"></section>
+    <section id="special"></section>
+
+    <div class="worlds" id="worlds">
+      <div class="panel" id="cpuPanel"></div>
+      <div class="panel" id="gpuPanel"></div>
+    </div>
+
+    <div class="legendbar" id="legend"></div>
+  </div>
+</main>
+
+<script>
+// The placeholder token on the next line is replaced by sched_demo.py with the
+// scene JSON. Opened raw (no substitution), the reference throws, so catch it
+// and show a friendly notice instead of a blank error page.
+let DATA;
+try { DATA = __DATA__; } catch (e) { DATA = null; }
+
+let curScene = 0, curStep = 0, timer = null, speed = 1;
+let selectedReq = null, selectedBlock = null, showAllBlocks = false, follow = false;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---------------- utils ----------------
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function md(s){
+  return esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+const REQ_COLORS = ['#5b9cf6','#3ddc84','#ffc53d','#ff6b6b','#c084fc','#22d3ee','#fb923c','#94a3b8'];
+function reqColor(id){
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 1000;
+  return REQ_COLORS[h % REQ_COLORS.length];
+}
+function isInitial(f){ return f.step === 0 || f.meta.initial; }
+function eventsOf(f, type){ return f.events.filter(e => e.type === type); }
+function evSet(f, type){ return new Set(eventsOf(f, type).map(e => e.req_id)); }
+
+// block ownership: block_id -> req id (from kv.requests groups)
+function ownerMap(f){
+  const m = {};
+  for (const [rid, info] of Object.entries(f.kv.requests || {})){
+    for (const g of info.groups || []) for (const b of g) m[b] = rid;
+  }
+  return m;
+}
+// blocks actually used (has content or owned)
+function usedBlocks(f){
+  const s = new Set();
+  for (const [rid, info] of Object.entries(f.kv.requests || {})){
+    for (const g of info.groups || []) for (const b of g) s.add(b);
+  }
+  for (const slot of Object.keys(f.gpu.kv_content || {})) s.add(Math.floor(slot / (f.gpu.block_size || 16)));
+  return s;
+}
+// slots written this step (from slot_mapping)
+function writtenSlots(gpu){
+  const set = new Set();
+  for (const slots of Object.values(gpu.slot_mapping || {})){
+    for (const s of slots) if (s >= 0) set.add(s);
+  }
+  return set;
+}
+function markerClass(f){
+  if (f.meta.finished_reason === 'loop') return 'mk-loop';
+  if (f.meta.finished_reason === 'all_done') return 'mk-done';
+  if (eventsOf(f, 'preempted').length) return 'mk-preempt';
+  if (eventsOf(f, 'finished').length) return 'mk-finish';
+  if (eventsOf(f, 'scheduled').some(e => e.spec_tokens)) return 'mk-spec';
+  if (eventsOf(f, 'scheduled').length) return 'mk-sched';
+  return '';
+}
+function actionSummary(f){
+  if (isInitial(f)) return '初始状态：请求已入队，调度器尚未执行任何调度';
+  const parts = [];
+  const sch = eventsOf(f, 'scheduled');
+  if (sch.length) parts.push('调度 ' + sch.map(e => e.req_id + '（' + e.num_tokens + ' token）').join('、'));
+  const pre = eventsOf(f, 'preempted');
+  if (pre.length) parts.push('抢占 ' + pre.map(e => e.req_id).join('、'));
+  const fin = eventsOf(f, 'finished');
+  if (fin.length) parts.push('完成 ' + fin.map(e => e.req_id).join('、'));
+  if (!parts.length) return '本步无调度事件（状态保持）';
+  return parts.join(' · ');
+}
+
+// ---------------- scene setup ----------------
+function initTabs(){
+  if (!DATA || !DATA.length) return;
+  const el = document.getElementById('tabs');
+  let html = '', lastGrp = '';
+  DATA.forEach((sc, i) => {
+    const m = sc.meta;
+    if (m.group !== lastGrp){ html += `<span class="grp">${m.group}</span>`; lastGrp = m.group; }
+    html += `<button class="tab" role="tab" aria-selected="${i === curScene}" data-i="${i}" onclick="selectScene(${i})">
+      <span class="dot" style="background:${m.color}"></span>${esc(m.title)}</button>`;
+  });
+  el.innerHTML = html;
+  document.getElementById('prevScene').disabled = curScene === 0;
+  document.getElementById('nextScene').disabled = curScene === DATA.length - 1;
+}
+
+function renderMarkers(){
+  const fr = DATA[curScene].frames;
+  const el = document.getElementById('markers');
+  el.innerHTML = fr.map((f, i) =>
+    `<button class="pip ${markerClass(f)} ${i === curStep ? 'active' : ''}" data-step="${i}"
+       onclick="gotoStep(${i})" aria-label="跳到第 ${i} 步${isInitial(f) ? '（初始状态）' : ''}"
+       title="第 ${i} 步${isInitial(f) ? '（初始状态）' : ''}${f.events.length ? ' · ' + f.events.map(e => e.type).join('/') : ''}"></button>`
+  ).join('');
+}
+
+function selectScene(i, opts){
+  if (!DATA || !DATA.length) return;
+  const fromHash = opts && opts.fromHash;
+  if (timer){ clearInterval(timer); timer = null; syncPlayBtn(); }
+  curScene = i; curStep = 0; selectedReq = null; selectedBlock = null;
+  const n = DATA[i].frames.length;
+  document.getElementById('range').max = n - 1;
+  document.getElementById('range').value = 0;
+  document.querySelectorAll('.tab').forEach((t, ti) => {
+    t.classList.toggle('active', ti === i);
+    t.setAttribute('aria-selected', ti === i);
+  });
+  document.getElementById('prevScene').disabled = i === 0;
+  document.getElementById('nextScene').disabled = i === DATA.length - 1;
+  render();
+  const stage = document.getElementById('stage');
+  if (stage) stage.scrollTop = 0;
+  if (!fromHash){
+    syncHash();
+    const main = document.getElementById('main');
+    if (!reducedMotion && main.getBoundingClientRect().top < 0) main.scrollIntoView({behavior: 'smooth'});
+  }
+}
+
+// ---------------- navigation ----------------
+function stepDelta(d){
+  if (!DATA || !DATA.length) return;
+  const n = DATA[curScene].frames.length;
+  gotoStep(Math.max(0, Math.min(n - 1, curStep + d)));
+}
+function gotoStep(s){
+  if (!DATA || !DATA.length) return;
+  const n = DATA[curScene].frames.length;
+  const next = Math.max(0, Math.min(n - 1, s));
+  if (next === curStep) return;
+  curStep = next;
+  document.getElementById('range').value = curStep;
+  render(true);
+  syncHash();
+}
+function togglePlay(){
+  if (!DATA || !DATA.length) return;
+  if (timer){ clearInterval(timer); timer = null; }
+  else {
+    if (curStep >= DATA[curScene].frames.length - 1) curStep = 0;
+    timer = setInterval(() => {
+      const n = DATA[curScene].frames.length;
+      if (curStep >= n - 1){ clearInterval(timer); timer = null; syncPlayBtn(); }
+      else {
+        const before = curStep;
+        stepDelta(1);
+        if (follow && curStep === before + 1) followScroll(curStep);
+      }
+    }, 900 / speed);
+  }
+  syncPlayBtn();
+}
+// With "跟随写入" enabled, keep the newest written KV block in view while playing.
+function followScroll(step){
+  const f = DATA[curScene].frames[step];
+  const written = writtenSlots(f.gpu);
+  if (!written.size) return;
+  const bs = f.gpu.block_size || 16;
+  let bid = -1;
+  for (const slot of written) bid = Math.max(bid, Math.floor(slot / bs));
+  const el = document.getElementById('blk-' + bid);
+  if (el && !reducedMotion) el.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+}
+function setSpeed(v){ speed = v; if (timer){ clearInterval(timer); timer = null; togglePlay(); } }
+function syncPlayBtn(){
+  const b = document.getElementById('playBtn');
+  b.textContent = timer ? '⏸ 暂停' : '▶ 播放';
+  b.setAttribute('aria-label', timer ? '暂停播放' : '自动播放');
+}
+function syncHash(){
+  try {
+    const m = DATA[curScene].meta;
+    history.replaceState(null, '', '#' + m.id + '/' + curStep);
+  } catch (e) {}
+}
+function parseHash(){
+  if (!DATA || !DATA.length) return false;
+  const h = location.hash.replace(/^#/, '');
+  if (!h) return false;
+  const [sid, step] = h.split('/');
+  const idx = DATA.findIndex(s => s.meta.id === sid);
+  if (idx < 0) return false;
+  selectScene(idx, {fromHash: true});
+  if (step != null && step !== '') gotoStep(+step);
+  return true;
+}
+
+// ---------------- render ----------------
+// Element-level view anchoring: pin whatever the reader is actually looking at
+// (a KV block, a request row, or a whole section) to the same viewport offset
+// across re-renders. Works for any scroll container (the stage, or the page).
+const ANCHOR_IDS = ['story', 'controls', 'scrub', 'special', 'cpuPanel', 'gpuPanel', 'legend'];
+function scrollContainerOf(el){
+  let n = el.parentElement;
+  while (n){
+    const s = getComputedStyle(n);
+    if (/(auto|scroll|overlay)/.test(s.overflowY)) return n;
+    n = n.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+function viewAnchor(){
+  const vh = window.innerHeight || 0;
+  if (vh === 0) return null;
+  let el = null;
+  try {
+    el = document.elementFromPoint(Math.min((window.innerWidth || 0) * 0.5, 720), vh * 0.45);
+  } catch (e) {}
+  let node = el;
+  while (node && node !== document.body && node !== document.documentElement){
+    const id = node.id || '';
+    if (id.indexOf('blk-') === 0)
+      return {kind: 'el', sel: '#' + id, fallback: 'gpuPanel', d: node.getBoundingClientRect().top};
+    const rid = node.getAttribute && node.getAttribute('data-rid');
+    if (rid)
+      return {kind: 'el', sel: '[data-rid="' + rid + '"]', fallback: 'cpuPanel', d: node.getBoundingClientRect().top};
+    node = node.parentElement;
+  }
+  for (const id of ANCHOR_IDS){
+    const s = document.getElementById(id);
+    if (!s) continue;
+    const r = s.getBoundingClientRect();
+    if (r.height === 0) continue;   // hidden or not laid out
+    if (r.bottom <= 0) continue;    // fully above the viewport
+    if (r.top >= vh) break;         // fully below; later sections are further down
+    return {kind: 'sec', id: id, d: r.top};
+  }
+  return null;
+}
+function restoreView(a){
+  if (!a) return;
+  let el = null;
+  if (a.kind === 'el'){
+    el = document.querySelector(a.sel);
+    if (!el && a.fallback) el = document.getElementById(a.fallback);
+  }
+  if (!el) el = document.getElementById(a.id);
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  // Instant correction (never smooth): smooth restoration would animate the
+  // whole page on every step and look like jumping.
+  const c = scrollContainerOf(el);
+  c.scrollTop += rect.top - a.d;
+}
+
+function render(keepView){
+  // Manual navigation keeps the view stable; autoplay defers to follow mode.
+  const anchor = (keepView && !(timer && follow)) ? viewAnchor() : null;
+  const sc = DATA[curScene], m = sc.meta, f = sc.frames[curStep];
+  const prev = curStep > 0 ? sc.frames[curStep - 1] : null;
+
+  document.getElementById('story').innerHTML = storyHtml(m, f, prev);
+  document.getElementById('special').innerHTML = specialHtml(m, f);
+  // Step counter shows 1-based schedule steps (the initial frame is frame 0,
+  // not a schedule step), so the last frame reads "step N / N" next to the
+  // completion badge instead of the misleading 0-based "step N-1 / N".
+  const hasInit = sc.frames[0].step === 0;
+  const totalSteps = hasInit ? m.num_steps - 1 : m.num_steps;
+  document.getElementById('stepinfo').innerHTML = isInitial(f)
+    ? `step <b>0</b> · 初始状态 · 共 <b>${totalSteps}</b> 步`
+    : `step <b>${f.step}</b> / ${totalSteps}`;
+  document.getElementById('loopBadge').innerHTML = loopBadgeHtml(f);
+  renderMarkers();
+  renderLegend();
+
+  const hasWorlds = !isEmptyWorld(f);
+  const worlds = document.getElementById('worlds');
+  worlds.style.display = hasWorlds ? '' : 'none';
+  if (hasWorlds){
+    document.getElementById('cpuPanel').innerHTML = cpuPanel(f, prev);
+    document.getElementById('gpuPanel').innerHTML = gpuPanel(f);
+  }
+  if (anchor) restoreView(anchor);
+}
+
+function loopBadgeHtml(f){
+  if (f.meta.finished_reason === 'loop')
+    return `<span class="loopbadge loop">⟳ 已进入稳定状态（重复于 step ${f.meta.repeat_at}）</span>`;
+  if (f.meta.finished_reason === 'all_done')
+    return '<span class="loopbadge done">✓ 全部请求已完成</span>';
+  return '';
+}
+
+function storyHtml(m, f, prev){
+  const badgeCls = f.meta.finished_reason === 'loop' ? 'loop' : (f.meta.finished_reason === 'all_done' ? 'done' : (isInitial(f) ? 'init' : ''));
+  const badgeTxt = isInitial(f) ? '初始状态' : 'STEP ' + f.step;
+  const lines = (f.explanation || []).map(p => `<li>${md(p)}</li>`).join('');
+  let chips = '';
+  for (const e of f.events){
+    const r = f.cpu.requests[e.req_id];
+    let mode;
+    if (e.type === 'preempted') mode = '被抢占';
+    else if (e.type === 'finished') mode = '完成';
+    else if (r && r.num_output_tokens === 0) mode = 'prefill';
+    else if (e.spec_tokens) mode = 'decode + draft';
+    else mode = 'decode';
+    const spec = e.spec_tokens ? ` · draft×${e.spec_tokens.length}` : '';
+    const n = e.num_tokens != null ? ` · ${e.num_tokens} token${spec}` : '';
+    const col = reqColor(e.req_id);
+    chips += `<span class="evchip ${e.type}" style="border-color:${col};color:${col}"><b>${esc(e.req_id)}</b>${esc(mode + n)}</span>`;
+  }
+  return `
+    <div class="top">
+      <span class="story-badge ${badgeCls} tnum">${badgeTxt}</span>
+      <span class="story-title">${esc(actionSummary(f))}</span>
+    </div>
+    ${lines ? `<ul class="expl">${lines}</ul>` : '<p style="font-size:12px;color:var(--muted);margin-top:4px">本步没有新的调度事件。</p>'}
+    ${chips ? `<div class="evchips">${chips}</div>` : ''}`;
+}
+
+function isEmptyWorld(f){
+  return !Object.keys(f.cpu.requests || {}).length
+    && !(f.cpu.waiting || []).length && !(f.cpu.running || []).length
+    && !(f.cpu.skipped_waiting || []).length
+    && !((f.kv.pool || {}).per_block || []).length
+    && !Object.keys(f.gpu.block_table || {}).length
+    && !Object.keys(f.gpu.kv_content || {}).length;
+}
+
+// ---------------- CPU panel ----------------
+function cpuPanel(f, prev){
+  const cpu = f.cpu, kv = f.kv;
+  const owners = ownerMap(f);
+  const prevOwners = prev ? ownerMap(prev) : {};
+  const schedSet = evSet(f, 'scheduled'), premSet = evSet(f, 'preempted'), finSet = evSet(f, 'finished');
+  const order = [...(cpu.running || []), ...(cpu.waiting || []), ...(cpu.skipped_waiting || [])];
+  const seen = new Set();
+
+  // "what changed this step" chip
+  const newBlkCount = prev ? Object.keys(owners).filter(b => prevOwners[b] !== owners[b]).length : 0;
+  const dParts = [];
+  if (schedSet.size) dParts.push(`调度 ${schedSet.size}`);
+  if (premSet.size) dParts.push(`抢占 ${premSet.size}`);
+  if (finSet.size) dParts.push(`完成 ${finSet.size}`);
+  if (newBlkCount) dParts.push(`新块 +${newBlkCount}`);
+  const deltaHtml = dParts.length ? `<span class="delta">本步：${dParts.join(' · ')}</span>` : '';
+
+  let reqs = '';
+  for (const rid of order){
+    if (seen.has(rid)) continue; seen.add(rid);
+    const r = cpu.requests[rid];
+    if (!r) continue;
+    const total = r.num_tokens, comp = r.num_computed_tokens;
+    // With spec decode / diffusion, computed can briefly lead num_tokens while
+    // drafts or canvas tokens are in flight; clamp so the bar never exceeds
+    // 100% and stays consistent with the KV grid (which only shows materialized
+    // tokens).
+    const inFlight = Math.max(0, comp - total);
+    const shown = Math.min(comp, total);
+    const pct = total ? Math.round(shown / total * 100) : 0;
+    const color = reqColor(rid);
+    let cls = '';
+    if (selectedReq === rid) cls += ' sel';
+    else if (selectedReq) cls += ' dim';
+    if (schedSet.has(rid)) cls += ' sched';
+    if (premSet.has(rid)) cls += ' preempt';
+    if (finSet.has(rid)) cls += ' finish';
+    const meta = [
+      `<span title="prompt 的 token 数">prompt=${r.num_prompt_tokens}</span>`,
+      `<span title="已生成的输出 token 数">output=${r.num_output_tokens}</span>`,
+      `<span title="优先级，越小越优先">priority=${r.priority}</span>`,
+      `<span title="被抢占次数">preempt=${r.num_preemptions}</span>`,
+      r.num_output_placeholders ? `<span class="ph" title="GPU 上尚未落地的输出 token">placeholders=${r.num_output_placeholders}</span>` : '',
+      r.is_prefill_chunk ? '<span class="chunk">chunk</span>' : ''
+    ].join('');
+    reqs += `<button class="req${cls}" data-rid="${rid}" onclick="selectReq('${rid}')" aria-pressed="${selectedReq === rid}">
+      <span class="head"><span class="rid" style="color:${color}">${esc(r.id)}</span>
+        <span class="st st-${r.status}">${r.status}</span></span>
+      <span class="bar"><span class="fill" style="width:${pct}%;background:${color}"></span>
+        <span class="vals" ${inFlight ? `title="另有 ${inFlight} 个 draft/canvas token 在流水线中（尚未落地为输出）"` : ''}>${shown}/${total} tokens</span></span>
+      <span class="meta">${meta}</span></button>`;
+  }
+  if (!reqs) reqs = '<div class="note">无活跃请求（该场景为手绘拓扑，无真实 Request 对象）</div>';
+
+  // queues with move highlighting (compare with prev frame)
+  const prevCpu = prev ? prev.cpu : null;
+  const qChip = (ids, prevIds) => {
+    const cur = ids || [], pv = prevIds || [];
+    const inn = new Set(cur.filter(id => !pv.includes(id)));
+    const out = new Set(pv.filter(id => !cur.includes(id)));
+    let html = cur.length ? cur.map(i =>
+      `<span class="qchip ${inn.has(i) ? 'new' : ''}" style="color:${reqColor(i)}">${esc(i)}</span>`).join('') : '';
+    if (out.size) html += [...out].map(i => `<span class="qchip leave" style="color:${reqColor(i)}">${esc(i)}</span>`).join('');
+    return html || '<span style="color:var(--faint);font-size:10.5px">空</span>';
+  };
+
+  // block pool
+  const pool = kv.pool || {};
+  let blocks = '';
+  for (const b of pool.per_block || []){
+    const owner = owners[b.block_id];
+    let col, cls = '', label = b.block_id, tip;
+    if (b.is_null){
+      col = '#3a1220'; cls = 'null'; label = 'N';
+      tip = `blk ${b.block_id} · null block（哨兵占位块，不存 KV、不参与分配）`;
+    } else {
+      col = owner ? reqColor(owner) : '#0a0e16';
+      cls = (owner ? '' : 'free') + (b.is_cached ? ' cached' : '');
+      const isNew = owner && prevOwners[b.block_id] !== owner;
+      if (isNew) cls += ' new';
+      if (selectedBlock === b.block_id) cls += ' sel';
+      if (selectedReq && owner !== selectedReq) cls += ' dim';
+      tip = `blk ${b.block_id} · ref_cnt=${b.ref_cnt}${b.is_cached ? ' · cached' : ''}${owner ? ' · owner=' + owner : ''}${isNew ? ' · 本步新分配' : ''}`;
+    }
+    blocks += `<button class="blk ${cls}" style="background:${col}" onclick="selectBlock(${b.block_id})"
+      aria-label="块 ${b.block_id}${owner ? '，属于 ' + owner : ''}">${label}<span class="tip">${tip}</span></button>`;
+  }
+  const usage = pool.usage != null ? (pool.usage * 100).toFixed(0) + '%' : '—';
+  const cap = (n) => (cpu.max_num_running != null ? ` <span class="cap tnum">${n}/${cpu.max_num_running}</span>` : '');
+  const poolHtml = blocks
+    ? `<div class="pool">${blocks}</div>
+       <div class="poolhint">填色=被请求占用 · 深色=空闲 · 黄描边=已缓存 · 闪烁=本步新分配 ·
+         <b style="color:var(--null)">blk 0 是 null block（哨兵），不存 KV、不参与分配</b>。点方块可在 GPU 侧定位该块。</div>`
+    : '<div class="note">无 KV 块池数据</div>';
+
+  return `<div class="panel-head"><span class="tag cpu">CPU 侧</span><h3>调度器 Python 对象</h3>${deltaHtml}<span class="hint">request / queue / block pool</span></div>
+    <div class="budget tnum">token 预算 <b>${cpu.token_budget ?? '—'}</b> · max_num_running_reqs <b>${cpu.max_num_running ?? '—'}</b></div>
+    <h4>队列 Queues</h4>
+    <div class="queues">
+      <div class="q"><span class="qlabel">Running · 正在计算${cap((cpu.running || []).length)}</span><div class="qbody">${qChip(cpu.running, prevCpu && prevCpu.running)}</div></div>
+      <div class="q"><span class="qlabel">Waiting · 排队等待</span><div class="qbody">${qChip(cpu.waiting, prevCpu && prevCpu.waiting)}</div></div>
+      <div class="q"><span class="qlabel">Skipped · 被跳过</span><div class="qbody">${qChip(cpu.skipped_waiting, prevCpu && prevCpu.skipped_waiting)}</div></div>
+    </div>
+    <h4>请求 Request <span class="hint">点卡片高亮其 KV 块与缓存格</span></h4>
+    <div class="reqlist">${reqs}</div>
+    <h4>BlockPool <span class="hint tnum">${(pool.num_blocks ?? 0)} 块 · 占用 ${usage}</span></h4>
+    ${poolHtml}`;
+}
+
+// ---------------- GPU panel ----------------
+function gpuPanel(f){
+  const gpu = f.gpu || {}, kv = f.kv || {};
+  const bs = gpu.block_size || 16;
+  const ib = gpu.input_batch || {};
+  const ntok = ib.num_scheduled_tokens || {};
+
+  let bt = '';
+  for (const [rid, blks] of Object.entries(gpu.block_table || {})){
+    const sel = selectedReq === rid ? ' sel' : (selectedReq ? ' dim' : '');
+    bt += `<div class="btrow${sel}" data-rid="${rid}"><span class="rid" style="color:${reqColor(rid)}">${esc(rid)}</span>
+      ${blks.length ? blks.map(b => `<span class="slotchip" style="color:${reqColor(rid)}">blk ${b}</span>`).join('') : '<span style="color:var(--faint)">—</span>'}
+      </div>`;
+  }
+
+  let sm = '';
+  for (const [rid, slots] of Object.entries(gpu.slot_mapping || {})){
+    const sel = selectedReq === rid ? ' sel' : (selectedReq ? ' dim' : '');
+    sm += `<div class="smrow${sel}" data-rid="${rid}"><span class="rid" style="color:${reqColor(rid)}">${esc(rid)}</span>
+      <span class="slots">${slots.map(s => `<span class="slotchip">${s}</span>`).join('')}</span></div>`;
+  }
+
+  const ntokStr = Object.entries(ntok).map(([r, n]) => `${r}:${n}`).join('  ');
+  const ibLine = Object.keys(ntok).length || (ib.total_num_scheduled_tokens != null)
+    ? `<div class="ibline tnum">本步总 token <b>${ib.total_num_scheduled_tokens || 0}</b> · 每请求 ${ntokStr || '—'}</div>`
+    : '<div class="note">本步无调度请求（无 InputBatch）</div>';
+
+  const hasKv = Object.keys(gpu.kv_content || {}).length || ((kv.pool || {}).per_block || []).length;
+  const newSlots = writtenSlots(gpu).size;
+  const gpuDelta = newSlots ? `<span class="delta">本步新写 ${newSlots} slot</span>` : '';
+  const kvHtml = hasKv
+    ? `<div class="kvhead-row">
+         <label class="toggle"><input type="checkbox" ${showAllBlocks ? '' : 'checked'} onchange="toggleShowAll(this.checked)">只显示已用块</label>
+         <span style="font-size:10.5px;color:var(--faint)">绿色放大弹出 = 本步新写入</span>
+       </div>
+       ${kvGrid(gpu, kv)}
+       <div class="kvfoot">每个小格 = 一个 <b>slot</b>，存一个 token 的 KV：格子内是 token id，底色表示属于哪个请求。
+         slot = block_id × block_size + 块内偏移；每个 block 有 ${bs} 个 slot。点块池方块可定位到对应缓存块。</div>`
+    : '<div class="note">该场景为手绘拓扑，无 KV 缓存张量视图。</div>';
+
+  return `<div class="panel-head"><span class="tag gpu">GPU 侧</span><h3>模拟张量 torch.Tensor</h3>${gpuDelta}<span class="hint">device=cuda · 模拟</span></div>
+    <div class="budget tnum">block_size <b>${bs}</b> · 缓存块数 <b>${(gpu.kv_cache_tensor || {}).num_blocks ?? ((kv.pool || {}).num_blocks ?? 0)}</b></div>
+    <h4>BlockTable <span class="hint">每请求占用的 block_id 列表</span></h4>
+    ${bt || '<div class="note">本步无调度请求</div>'}
+    <h4>slot_mapping <span class="hint">本次调度每个 token 写入的 slot</span></h4>
+    ${sm || '<div class="note">—</div>'}
+    <h4>InputBatch <span class="hint">本步一起送进模型的一批 token</span></h4>
+    ${ibLine}
+    <h4>KV Cache 缓存格子柜</h4>
+    ${kvHtml}`;
+}
+
+function kvGrid(gpu, kv){
+  const bs = gpu.block_size || 16;
+  const content = gpu.kv_content || {};
+  const written = writtenSlots(gpu);
+  const pool = kv.pool || {};
+  const numBlocks = pool.num_blocks || 0;
+  const used = usedBlocks({kv: kv, gpu: gpu});
+  const owners = ownerMap({kv: kv, gpu: gpu});
+  if (!numBlocks) return '<div class="note">无 KV 块</div>';
+  const cellPx = bs <= 4 ? 32 : bs <= 8 ? 28 : 24;
+  let html = '';
+  for (let b = 0; b < numBlocks; b++){
+    if (!showAllBlocks && !used.has(b)) continue;
+    const isNull = b === 0;
+    let cells = '';
+    for (let o = 0; o < bs; o++){
+      const slot = b * bs + o;
+      const c = content[slot];
+      let body = '', cls = 'cell';
+      if (isNull){
+        cls = 'cell null';
+        body = '<span class="celltok" style="color:var(--null)">·</span>';
+      } else if (c){
+        const [tok, rid] = c.split('|');
+        const col = reqColor(rid);
+        // Only highlight new slots that actually hold a (materialized) token;
+        // in-flight draft/canvas slots have no cell content yet.
+        cls = (c && written.has(slot)) ? 'cell new' : 'cell';
+        if (selectedReq === rid) cls += ' sel';
+        else if (selectedReq) cls += ' nsel';
+        body = `<span class="celltok" style="background:${col}">${tok}</span><span class="cellrid" style="color:${col}">${rid}</span>`;
+      } else {
+        cls = 'cell empty';
+      }
+      cells += `<div class="${cls}" title="${isNull ? 'null block 占位，不存数据' : ('slot ' + slot + (c ? ' · ' + c : ' · 空'))}">
+        ${body}${c || isNull ? `<i class="cellslot">${slot}</i>` : ''}</div>`;
+    }
+    html += `<div class="kvblock ${isNull ? 'null' : ''} ${selectedBlock === b ? 'sel-block' : ''}" id="blk-${b}" style="--cell:${cellPx}px">
+      <div class="kvbhead">${isNull ? 'blk 0 (null)' : 'blk <b>' + b + '</b>' + (owners[b] ? ' · ' + esc(owners[b]) : '')}</div>
+      <div class="cells">${cells}</div></div>`;
+  }
+  return `<div class="kvgrid">${html}</div>`;
+}
+
+// ---------------- selection ----------------
+function selectReq(rid){
+  const wasSel = selectedReq === rid;
+  selectedReq = wasSel ? null : rid;
+  render();
+  // On mobile (stacked panels) bring the GPU panel into view when selecting.
+  if (!wasSel && selectedReq && !reducedMotion){
+    const gpu = document.getElementById('gpuPanel');
+    if (gpu && gpu.getBoundingClientRect().top > window.innerHeight){
+      gpu.scrollIntoView({block: 'start', behavior: 'smooth'});
+    }
+  }
+}
+function selectBlock(bid){
+  selectedBlock = (selectedBlock === bid) ? null : bid;
+  render();
+  if (selectedBlock !== null){
+    const el = document.getElementById('blk-' + bid);
+    if (el && !reducedMotion) el.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  }
+}
+function toggleShowAll(showUsedOnly){
+  showAllBlocks = !showUsedOnly;
+  render(true);
+}
+
+// ---------------- legend ----------------
+function renderLegend(){
+  const sc = DATA[curScene];
+  const ids = new Set();
+  for (const f of sc.frames){
+    for (const rid of Object.keys(f.cpu.requests || {})) ids.add(rid);
+    for (const [rid, info] of Object.entries(f.kv.requests || {})) for (const g of info.groups || []) ids.add(rid);
+  }
+  const reqSw = [...ids].map(rid =>
+    `<span class="lgs"><span class="sw req" style="background:${reqColor(rid)}"></span>${esc(rid)}</span>`).join('');
+  document.getElementById('legend').innerHTML = `
+    ${reqSw ? `<span class="lg">请求 <span class="lgs">${reqSw}</span></span>` : ''}
+    <span class="lg"><span class="sw" style="background:var(--ok)"></span>RUNNING</span>
+    <span class="lg"><span class="sw" style="background:var(--muted)"></span>WAITING</span>
+    <span class="lg"><span class="sw" style="background:var(--preempt)"></span>PREEMPTED</span>
+    <span class="lg"><span class="sw" style="background:var(--panel3)"></span>空闲块</span>
+    <span class="lg"><span class="sw" style="background:repeating-linear-gradient(45deg,#3a1220,#3a1220 3px,#2a0c16 3px,#2a0c16 6px)"></span>null block</span>
+    <span class="lg"><span class="sw" style="outline:2px solid var(--warn)"></span>已缓存</span>
+    <span class="lg" style="color:var(--ok)">闪烁 / 放大弹出 = 本步变化</span>`;
+}
+
+// ---------------- special views ----------------
+const phases = {prefill: 'Prefill（producer 计算 KV）', transfer: 'KV 传输', decode: 'Decode（consumer 生成）'};
+
+function specialHtml(m, f){
+  if (m.special_view === 'dp_balance'){
+    const d = f.cpu.dp_balance || {};
+    return `<div class="special"><h3>DP 预填充均衡决策</h3><div class="dp">
+      <div class="row">step ${f.step} ·
+        <span>cadence_aligned</span><span class="flag ${d.cadence_aligned ? 'on' : 'off'}">${d.cadence_aligned ? '是' : '否'}</span>
+        <span>has_decode</span><span class="flag ${d.has_decode ? 'on' : 'off'}">${d.has_decode ? '是' : '否'}</span>
+        <span>waiting=<b>${d.waiting}</b></span>
+        <span>defer_prefills</span><span class="flag ${d.defer_prefills ? 'on' : 'off'}">${d.defer_prefills ? '是' : '否'}</span></div>
+    </div><div class="legend">DP 分离集群的 prefill 实例：cadence 对齐步集中投放 prefill
+      （waiting 积压 = prefill 容量饱和，照常调度）；off-cadence 步若 prefill 未饱和
+      （waiting 已清空）则 <code>defer_prefills</code>，把算力让给 decode，
+      避免 prefill 抢占 decode 的节奏。</div></div>`;
+  }
+  if (m.special_view === 'parallel_topology'){
+    const pd = f.cpu.pd || {};
+    const phase = pd.phase || 'prefill';
+    const phaseLabel = phases[phase] || phase;
+    const prod = Object.entries(pd.producer || {});
+    const cons = Object.entries(pd.consumer || {});
+    const reqRow = (entries) => entries.length ? entries.map(([rid, r]) => {
+      const blks = r.blocks || [];
+      const pct = r.num_tokens ? Math.round(r.num_computed_tokens / r.num_tokens * 100) : 0;
+      return `<div class="pdreq">
+        <div class="pdhead"><b style="color:${reqColor(rid)}">${esc(rid)}</b>
+          <span class="st st-${r.status}">${r.status}</span></div>
+        <div class="bar"><div class="fill" style="width:${pct}%;background:${reqColor(rid)}"></div>
+          <div class="vals">computed ${r.num_computed_tokens}${r.num_tokens ? ' / ' + r.num_tokens : ''}</div></div>
+        <div class="pdmeta">out=${r.num_output_tokens} · blocks=[${blks.join(',') || '—'}]
+          ${r.is_prefill_chunk ? '<span class="chunk">chunk</span>' : ''}</div></div>`;
+    }).join('') : '<div class="note">—</div>';
+    const transferNote = phase === 'transfer'
+      ? `<div class="pdtransfer">⬇ KV 传输：${(pd.transferred || []).map(rid => `<b style="color:${reqColor(rid)}">${esc(rid)}</b>`).join(' ')} 的 KV 块已移交 decode 实例</div>` : '';
+    return `<div class="special"><h3>并行 / PD 分离拓扑</h3>
+      <div class="pdcontainer">
+        <div class="pdnode pdn-prod"><div class="pdtitle">Prefill 实例 <small>kv_role=producer</small></div>${reqRow(prod)}</div>
+        <div class="pdarrow ${phase}">${phase === 'transfer' ? '⟶' : '·'}</div>
+        <div class="pdnode pdn-cons"><div class="pdtitle">Decode 实例 <small>kv_role=consumer</small></div>${reqRow(cons)}</div>
+      </div>
+      ${transferNote}
+      <div class="legend">阶段：<b>${phaseLabel}</b>（${pd.producer_hint || ''}）
+        · PD 分离用 KV connector 把 prefill 实例算好的 KV 块传给 decode 实例，decode 无需重算 prompt。</div></div>`;
+  }
+  if (m.special_view === 'spec_acceptance'){
+    const specs = eventsOf(f, 'scheduled').filter(e => e.spec_tokens);
+    if (!specs.length) return `<div class="special"><h3>投机解码 Draft</h3><div class="note">本步无 draft 验证（prefill 阶段或已结束）。</div></div>`;
+    let rows = '';
+    for (const e of specs){
+      rows += `<div class="row"><b style="color:${reqColor(e.req_id)}">${esc(e.req_id)}</b>:
+        1 目标 token + <b>${e.spec_tokens.length}</b> 个 draft ${e.spec_tokens.map(t => `<code>${t}</code>`).join(' ')}</div>`;
+    }
+    return `<div class="special"><h3>投机解码 Draft 验证</h3><div class="dp">${rows}</div>
+      <div class="legend">同一步安排 1 个目标 token + N 个 draft；模型一次验证，接受的 draft 加速解码，被拒绝的回退重算。</div></div>`;
+  }
+  if (m.special_view === 'structured_fsm'){
+    const req = Object.values(f.cpu.requests || {})[0];
+    if (!req) return `<div class="special"><h3>结构化输出 FSM</h3><div class="note">请求已完成。</div></div>`;
+    const allowed = '<code>0</code> <code>1</code> <code>2</code> <code>3</code> <code>4</code> <code>5</code> <code>6</code> <code>7</code> <code>8</code> <code>9</code>';
+    return `<div class="special"><h3>结构化输出 FSM 约束</h3><div class="dp">
+      <div class="row">grammar = 正则 <code>[0-9]+</code>（整数）</div>
+      <div class="row">每步 FSM 屏蔽非法 logits，只允许：${allowed}</div>
+      <div class="row">已生成 <b>${req.num_output_tokens}</b> 个合法数字 token（computed ${req.num_computed_tokens}/${req.num_tokens}）</div></div>
+      <div class="legend">调度器用结构化输出的有限状态机（FSM）限制每步候选 token，保证输出完全符合 grammar。</div></div>`;
+  }
+  if (m.special_view === 'encoder_decoder'){
+    const d = f.cpu.encoder_decoder || {};
+    const encPct = d.enc_total ? Math.round(d.encoder_tokens / d.enc_total * 100) : 0;
+    const decPct = d.dec_total ? Math.round(d.decoder_tokens / d.dec_total * 100) : 0;
+    return `<div class="special"><h3>Encoder-Decoder 双阶段</h3><div class="dp">
+      <div class="row">阶段：<b>${d.phase === 'encoder' ? 'Encoder 编码' : 'Decoder 生成'}</b></div>
+      <div class="row"><span style="width:90px">Encoder 输入</span>
+        <div class="bar" style="flex:1"><div class="fill" style="width:${encPct}%;background:var(--gpu)"></div></div>
+        <span class="tnum">${d.encoder_tokens}/${d.enc_total}</span></div>
+      <div class="row"><span style="width:90px">Decoder 输出</span>
+        <div class="bar" style="flex:1"><div class="fill" style="width:${decPct}%;background:var(--ok)"></div></div>
+        <span class="tnum">${d.decoder_tokens}/${d.dec_total}</span></div></div>
+      <div class="legend">Encoder-Decoder 先编码输入（写入 encoder cache），再在 decoder 上自回归生成；encoder 只编码一次，后续复用 caching。</div></div>`;
+  }
+  if (m.special_view === 'reserve_full_isl'){
+    const d = f.cpu.reserve || {};
+    if (!d.reserve_full_isl) return '';
+    return `<div class="special"><h3>整序列预留决策</h3><div class="dp">
+      <div class="row">reserve_full_isl = <b>${d.reserve_full_isl ? '开' : '关'}</b></div>
+      <div class="row tnum">A 已占 <b>${d.a_blocks}</b> 块 · 空余 <b>${d.free_after_a}</b> 块 · B 完整序列需 <b>${d.b_full_blocks}</b> 块</div>
+      <div class="row">完整序列可容纳？<span class="flag ${d.fits ? 'on' : 'off'}">${d.fits ? '是' : '否'}</span> · 准入决策：<b>${d.admitted ? '允许' : '拒绝'}</b></div>
+      <div class="row">→ ${d.decision}</div></div>
+      <div class="legend"><code>scheduler_reserve_full_isl=True</code> 时，新请求准入前必须让其完整序列
+        （准入时的 <code>num_tokens</code>，即整个 prompt）一次性装下空闲池；否则可能运行到一半因 KV 不足被抢占。</div></div>`;
+  }
+  if (m.special_view === 'diffusion'){
+    const specs = eventsOf(f, 'scheduled').filter(e => e.spec_tokens);
+    if (!specs.length) return `<div class="special"><h3>离散扩散去噪</h3><div class="note">本步无 canvas（prefill 阶段或已结束）。</div></div>`;
+    let rows = '';
+    for (const e of specs){
+      rows += `<div class="row"><b style="color:${reqColor(e.req_id)}">${esc(e.req_id)}</b>: 一次去噪生成 <b>${e.spec_tokens.length}</b> 个 canvas token ${e.spec_tokens.map(() => '<code>▢</code>').join(' ')}</div>`;
+    }
+    return `<div class="special"><h3>离散扩散 (dLLM) 去噪步骤</h3><div class="dp">${rows}</div>
+      <div class="legend">扩散模型 num_sampled_tokens_per_step=0：不做逐 token 自回归，每步对整个固定长度 canvas 做一次去噪，一次推进 canvas_length 个 token。</div></div>`;
+  }
+  if (m.special_view === 'pipeline'){
+    const reqs = Object.values(f.cpu.requests || {});
+    if (!reqs.length) return `<div class="special"><h3>异步调度流水线</h3><div class="note">请求已完成。</div></div>`;
+    let rows = '';
+    for (const r of reqs){
+      const place = r.num_output_placeholders;
+      rows += `<div class="row"><b style="color:${reqColor(r.id)}">${esc(r.id)}</b>:
+        output=${r.num_output_tokens} · placeholders=<b>${place}</b> · computed=${r.num_computed_tokens}/${r.num_tokens}
+        ${place > 0 ? '<span style="color:var(--gpu)">（GPU 上还有未落地的输出在流水线中）</span>' : ''}</div>`;
+    }
+    return `<div class="special"><h3>异步调度 / 流水线</h3><div class="dp">${rows}</div>
+      <div class="legend">异步调度提前登记 num_output_placeholders（GPU 上尚未落地的输出 token），使调度器可连续向前调度（流水线），由 worker 侧异步补回。</div></div>`;
+  }
+  return '';
+}
+
+// ---------------- events wiring ----------------
+function wireStatic(){
+  const guideHead = document.getElementById('guideHead');
+  const guideBody = document.getElementById('guideBody');
+  let open = true;
+  try { open = localStorage.getItem('schedviz-guide') !== '0'; } catch (e) {}
+  guideBody.style.display = open ? 'block' : 'none';
+  guideHead.classList.toggle('open', open);
+  guideHead.setAttribute('aria-expanded', open);
+  guideHead.addEventListener('click', () => {
+    const now = guideBody.style.display !== 'none';
+    guideBody.style.display = now ? 'none' : 'block';
+    guideHead.classList.toggle('open', !now);
+    guideHead.setAttribute('aria-expanded', !now);
+    try { localStorage.setItem('schedviz-guide', now ? '0' : '1'); } catch (e) {}
+  });
+  document.getElementById('prevBtn').addEventListener('click', () => stepDelta(-1));
+  document.getElementById('nextBtn').addEventListener('click', () => stepDelta(1));
+  document.getElementById('playBtn').addEventListener('click', togglePlay);
+  document.getElementById('firstBtn').addEventListener('click', () => gotoStep(0));
+  document.getElementById('lastBtn').addEventListener('click', () => {
+    if (DATA && DATA.length) gotoStep(DATA[curScene].frames.length - 1);
+  });
+  document.getElementById('prevScene').addEventListener('click', () => selectScene(Math.max(0, curScene - 1)));
+  document.getElementById('nextScene').addEventListener('click', () => {
+    if (DATA && DATA.length) selectScene(Math.min(DATA.length - 1, curScene + 1));
+  });
+  document.getElementById('range').addEventListener('input', e => gotoStep(+e.target.value));
+  document.getElementById('speedSel').addEventListener('change', e => setSpeed(+e.target.value));
+  document.getElementById('followCk').addEventListener('change', e => { follow = e.target.checked; });
+  document.getElementById('stageCk').addEventListener('change', e => {
+    document.getElementById('stage').classList.toggle('flow', !e.target.checked);
+  });
+  window.addEventListener('hashchange', parseHash);
+  document.addEventListener('keydown', e => {
+    const t = e.target;
+    if (t && t.matches && t.matches('input,select,textarea')) return;
+    const onButton = !!(t && t.closest && t.closest('button'));
+    if (e.key === 'ArrowRight') stepDelta(1);
+    else if (e.key === 'ArrowLeft') stepDelta(-1);
+    else if (e.key === ' ') { if (!onButton){ e.preventDefault(); togglePlay(); } }
+    else if (e.key === 'Home') gotoStep(0);
+    else if (e.key === 'End') { if (DATA && DATA.length) gotoStep(DATA[curScene].frames.length - 1); }
+  });
+}
+
+// ---------------- boot ----------------
+wireStatic();
+initTabs();
+if (!DATA || !DATA.length){
+  // Raw template opened without generated data: show how to produce it.
+  document.getElementById('main').innerHTML =
+    `<div class="special" style="margin-top:4px"><h3>这是渲染模板，不是成品页面</h3>
+      <div class="note">本文件里的数据占位符尚未被替换，需由
+        <code>sched_demo.py</code> 生成成品。请运行：<br><br>
+        <code style="font-size:13px">uv run python tools/sched_visualize/sched_demo.py</code><br><br>
+        然后打开生成的 <code>tools/sched_visualize/scheduler_visualization.html</code>。</div></div>`;
+} else if (!parseHash()) {
+  selectScene(0);
+}
+</script>
+</body>
+</html>
