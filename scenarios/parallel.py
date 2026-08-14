@@ -20,9 +20,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .base import make_scenario
-from .common import make_request, make_scheduler
-from ..samplers import one_token_per_req
+from scenarios.base import make_scenario
+from scenarios.common import make_request, make_scheduler
+from samplers import one_token_per_req
 
 # How many output tokens the decode (consumer) instance produces per step.
 _DECODE_TOKENS_PER_STEP = 1
@@ -33,7 +33,7 @@ def _prefill_only_output(scheduler, scheduler_output):
     so the producer instance only ever computes prompt KV (no decode). Requests
     whose prefill is already complete return empty and simply idle until the
     KV is transferred to the decode instance."""
-    from ..samplers import _req_ids
+    from samplers import _req_ids
 
     req_ids = _req_ids(scheduler_output)
     return _make_output(req_ids, [[] for _ in req_ids])

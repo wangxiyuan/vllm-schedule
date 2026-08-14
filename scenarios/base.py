@@ -12,9 +12,9 @@ from typing import Any
 
 from vllm.v1.core.sched.output import SchedulerOutput
 
-from ..engine import SchedulerDriver
-from ..kv_sim import extract_kv
-from ..tensor_view import extract_tensor_worlds
+from engine import SchedulerDriver
+from kv_sim import extract_kv
+from tensor_view import extract_tensor_worlds
 
 
 def explain_schedule(

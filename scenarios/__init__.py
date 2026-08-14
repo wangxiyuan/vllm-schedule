@@ -3,11 +3,11 @@ Scenario registry: combine scenarios from all modules.
 """
 from __future__ import annotations
 
-from .advanced import SCENARIOS as ADVANCED
-from .combo import SCENARIOS as COMBO
-from .core import SCENARIOS as CORE
-from .features import SCENARIOS as FEATURES
-from .parallel import make_parallel_scenarios
+from scenarios.advanced import SCENARIOS as ADVANCED
+from scenarios.combo import SCENARIOS as COMBO
+from scenarios.core import SCENARIOS as CORE
+from scenarios.features import SCENARIOS as FEATURES
+from scenarios.parallel import make_parallel_scenarios
 
 # Order: 基础循环 (core + features + spec/structured + spec_structured), then
 # 工程架构 (async + combos + parallel family). Groups render contiguously in

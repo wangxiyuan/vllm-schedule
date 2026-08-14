@@ -12,10 +12,10 @@ from __future__ import annotations
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.outputs import ModelRunnerOutput
 
-from ..samplers import _req_ids, make_draft_token_ids, one_token_per_req
-from .advanced import _DigitGrammar
-from .base import make_scenario
-from .common import make_request, make_scheduler
+from samplers import _req_ids, make_draft_token_ids, one_token_per_req
+from scenarios.advanced import _DigitGrammar
+from scenarios.base import make_scenario
+from scenarios.common import make_request, make_scheduler
 
 
 def _spec_sampler(num_spec_tokens: int):

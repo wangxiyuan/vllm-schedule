@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from vllm.v1.core.sched.output import SchedulerOutput
 
-from ..samplers import diffusion, make_draft_token_ids, one_token_per_req
-from .base import make_scenario
-from .common import make_request, make_scheduler
+from samplers import diffusion, make_draft_token_ids, one_token_per_req
+from scenarios.base import make_scenario
+from scenarios.common import make_request, make_scheduler
 
 
 # --------------------------------------------------------------------------

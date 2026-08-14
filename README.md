@@ -11,16 +11,19 @@ GPU 张量的实时变化（模拟）、KV 缓存从创建到占用的完整生�
 
 ```bash
 # 跑全部场景，输出单个自包含 HTML
-uv run python tools/sched_visualize/sched_demo.py
+uv run python sched_demo.py
 
 # 指定输出路径
-uv run python tools/sched_visualize/sched_demo.py -o docs/sched_viz.html
+uv run python sched_demo.py -o docs/sched_viz.html
 
 # 只跑某个场景
-uv run python tools/sched_visualize/sched_demo.py -s spec
+uv run python sched_demo.py -s spec
 
 # 列出所有场景
-uv run python tools/sched_visualize/sched_demo.py --list
+uv run python sched_demo.py --list
+
+# 生成 KV Cache 排布与逻辑↔物理映射页（独立页面，与调度页无关）
+uv run python kv_layout.py -o kv_cache_layout.html
 ```
 
 用浏览器打开生成的 HTML 即可交互（上一步 / 下一步 / 自动播放 / 拖拽进度条）。
@@ -106,17 +109,39 @@ uv run python tools/sched_visualize/sched_demo.py --list
 > （`reserve_full_isl`、`encoder_decoder`、`parallel`、`dp_balance`）因需完整的多模态
 > budget / KV connector / DP 集群设置，用**手绘**决策条来呈现该特性。
 
+## KV Cache 排布页（独立页面）
+
+`kv_layout.py` 生成一个**独立**页面 `kv_cache_layout.html`，不涉及调度过程，专注
+**KV cache 的内存排布与逻辑↔物理映射**：
+
+- **逻辑寻址**：token → manager block → kernel block → 物理 slot（两个块层级，
+  对照真实 worker 侧 `block_table.py` 的展开逻辑）。
+- **物理布局**：`KVCacheTensor` 原始分配、**L/B/H/N/C 维度顺序**（num-blocks-first、
+  NHD/HND、ROCM kv-first、层维）、多组共享池、DeepSeek-V4 packed 打包、页填充与量化缩放。
+- **模型差异**：GQA FullAttention / SlidingWindow / MLA / DSA / Mamba-hybrid / Encoder-Decoder，
+  每种都调用**真实** `get_kv_cache_groups` + `get_kv_cache_config_from_groups` 计算真实
+  `num_blocks`、kv_cache_groups、张量计划并渲染。
+- **逻辑→物理链路**：`pos → block_id → kernel_id → slot → 地址`，用真实 Scheduler 分配 +
+  worker 展开逻辑复算 slot_mapping 交互展示。
+
+数据来源：`layout/models.py`（真实 vLLM 规划代码）、`layout/mapping.py`（真实调度分配）。
+
 ## 代码结构
 
 ```
-tools/sched_visualize/
-├── sched_demo.py        # CLI 入口
+├── sched_demo.py        # 调度页 CLI 入口
 ├── engine.py            # 通用调度驱动引擎 + token 级循环检测
 ├── samplers.py          # ModelRunnerOutput mock（基础/spec/diffusion）
 ├── kv_sim.py            # KV 块池快照提取
 ├── tensor_view.py       # CPU/GPU 双世界张量提取
-├── template.html        # 渲染模板（内嵌 CSV+JS，无外部依赖）
-└── scenarios/
+├── template.html        # 调度页渲染模板（内嵌 CSV+JS，无外部依赖）
+├── kv_layout.py         # KV Cache 排布页 CLI 入口
+└── layout/
+    ├── template.html    # 排布页渲染模板（复用 template.html 的主题 CSS）
+    ├── models.py        # 真实 get_kv_cache_groups + get_kv_cache_config_from_groups
+    ├── mapping.py       # 真实调度分配 + worker 展开 → slot_mapping
+    └── sections.py      # 章节/小节内容组装
+and scenarios/
     ├── common.py        # 共享 scheduler/request 构造（支持多种特性 flag）
     ├── base.py          # 场景框架 + 公共 extractor + explain 钩子
     ├── core.py          # base/chunked/prefix/preemption/chunked_prefix

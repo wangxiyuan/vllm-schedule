@@ -21,12 +21,12 @@ import sys
 from pathlib import Path
 
 # Ensure the repo root is importable regardless of CWD.
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("PYTHONHASHSEED", "0")
 
-from tools.sched_visualize.scenarios import ALL_SCENARIOS, SCENARIO_BY_ID  # noqa: E402
-from tools.sched_visualize.scenarios.base import run_scenario  # noqa: E402
+from scenarios import ALL_SCENARIOS, SCENARIO_BY_ID  # noqa: E402
+from scenarios.base import run_scenario  # noqa: E402
 
 
 def render(scenes: list[dict]) -> str:

@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh" style="color-scheme:dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0b0e14">
+<title>vLLM KV Cache 排布与逻辑↔物理映射</title>
+<style>
+/* THEME: kv_layout.py injects the shared scheduler-theme CSS here. */
+
+:root{
+  --bg:#0b0e14; --panel:#121724; --panel2:#171e2e; --panel3:#1d2638;
+  --line:#26304a; --line2:#33405f;
+  --txt:#dbe4f5; --muted:#8494b0; --faint:#5d6b85;
+  --accent:#4f8ff7; --accent2:#7ab0ff;
+  --cpu:#4f8ff7; --gpu:#b07cf7; --py:#ffb84f;
+  --ok:#35d07f; --warn:#ffc53d; --err:#ff6b6b; --preempt:#ff5f5f;
+  --null:#ff7a9c;
+  --radius:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.55 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;padding:18px;max-width:1280px;margin:0 auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+h1{font-size:19px;text-wrap:balance}
+h2{font-size:15px;text-wrap:balance;scroll-margin-top:12px}
+h3,h4{font-size:13px;scroll-margin-top:12px}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent2);outline-offset:2px;border-radius:6px}
+a.skip{position:absolute;left:-999px;top:8px;background:var(--accent);color:#fff;padding:8px 14px;border-radius:8px;z-index:99}
+a.skip:focus{left:8px}
+.sub{color:var(--muted);font-size:12px;margin:4px 0 14px}
+.tnum{font-variant-numeric:tabular-nums}
+.badge{font-size:11px;padding:3px 9px;border-radius:10px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.badge b{color:var(--txt)}
+
+/* ---------- guide ---------- */
+.guide{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+.guide-head{width:100%;text-align:left;padding:10px 14px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;color:var(--accent2)}
+.guide-head:hover{background:var(--panel2)}
+.guide-head .arrow{margin-left:auto;transition:transform .2s ease}
+.guide-head.open .arrow{transform:rotate(90deg)}
+.guide-body{padding:2px 14px 14px;font-size:12px;color:#c3cee0}
+.guide-body p{margin-bottom:8px;line-height:1.65}
+.guide-body code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+.glossary{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:8px;margin-top:8px}
+.gcell{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.55}
+.gcell b{color:var(--accent2)}
+.guide-body kbd{background:var(--panel3);border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:10px;font-family:ui-monospace,monospace}
+
+/* ---------- scene bar ---------- */
+.scenebar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;flex:1;min-width:0}
+.grp{color:var(--faint);font-size:11px;margin:0 6px;letter-spacing:.04em;white-space:nowrap}
+.tab{padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:13px;color:var(--muted)}
+.tab:hover{background:var(--panel2);color:var(--txt)}
+.tab.active{font-weight:600;color:var(--txt);border-color:var(--accent);background:rgba(79,143,247,.12)}
+.tab .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.scene-nav{display:flex;gap:6px}
+.scene-nav button{padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12px}
+.scene-nav button:hover{background:var(--panel2);color:var(--txt)}
+.scene-nav button:disabled{opacity:.4;cursor:default}
+
+/* ---------- story ---------- */
+.story{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.story .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.story-badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:12px;letter-spacing:.05em;background:rgba(79,143,247,.15);color:var(--accent2);border:1px solid var(--accent)}
+.story-badge.init{background:rgba(125,138,165,.18);color:var(--muted);border-color:var(--line2)}
+.story-badge.loop{background:rgba(255,107,107,.15);color:var(--err);border-color:var(--err)}
+.story-badge.done{background:rgba(53,208,127,.15);color:var(--ok);border-color:var(--ok)}
+.story-title{font-size:15px;font-weight:600;flex:1;min-width:0;overflow-wrap:anywhere}
+.loopbadge{font-size:12px;padding:3px 10px;border-radius:10px;white-space:nowrap}
+.loopbadge.loop{background:rgba(255,107,107,.15);color:var(--err)}
+.loopbadge.done{background:rgba(53,208,127,.15);color:var(--ok)}
+.expl{list-style:none;margin-top:2px}
+.expl li{font-size:12.5px;color:#c3cee0;padding:3px 0 3px 12px;border-left:2px solid var(--line2);margin:5px 0}
+.expl li b{color:var(--txt)}
+.expl li code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+.evchips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.evchip{font-size:11px;padding:3px 9px;border-radius:10px;border:1px solid}
+.evchip.scheduled{border-color:var(--ok);background:rgba(53,208,127,.1);color:var(--ok)}
+.evchip.preempted{border-color:var(--preempt);background:rgba(255,95,95,.1);color:var(--preempt)}
+.evchip.finished{border-color:var(--muted);background:rgba(132,148,176,.12);color:var(--muted)}
+.evchip b{color:#fff}
+
+/* ---------- controls ---------- */
+.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;touch-action:manipulation}
+.controls button{padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:13px}
+.controls button:hover{background:var(--panel3)}
+.controls button.play{background:rgba(53,208,127,.15);border-color:var(--ok);color:var(--ok);font-weight:600;min-width:96px}
+.controls button.icon{min-width:40px}
+.speed{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-left:4px}
+.speed select{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 8px;font-size:12px}
+.stepinfo{font-size:12.5px;color:var(--muted);margin-left:auto;overflow-wrap:anywhere}
+.stepinfo b{color:var(--txt)}
+.keyhint{font-size:10.5px;color:var(--faint);margin-left:auto}
+.keyhint kbd{background:var(--panel3);border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:10px;font-family:ui-monospace,monospace}
+
+/* ---------- scrubber + markers ---------- */
+.scrub{margin-bottom:14px}
+#range{width:100%;accent-color:var(--accent);display:block}
+.markers{display:flex;gap:3px;margin-top:7px;align-items:center;min-height:14px}
+.pip{flex:1;height:10px;border-radius:3px;padding:0;min-width:0;border:1px solid var(--line);background:var(--panel3);opacity:.85}
+.pip:hover{opacity:1;transform:scaleY(1.5);transition:transform .12s ease,opacity .12s ease}
+.pip.active{outline:2px solid var(--accent2);outline-offset:1px;opacity:1}
+.pip.mk-sched{background:var(--cpu)}
+.pip.mk-spec{background:var(--gpu)}
+.pip.mk-preempt{background:var(--preempt)}
+.pip.mk-finish{background:var(--muted)}
+.pip.mk-done{background:var(--ok)}
+.pip.mk-loop{background:repeating-linear-gradient(45deg,var(--err),var(--err) 3px,var(--panel3) 3px,var(--panel3) 6px)}
+.mklegend{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--faint);margin-left:auto}
+.mklegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.scrub-foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:5px}
+
+/* ---------- stable stage ---------- */
+/* Fixed-height "canvas": the page height never changes while stepping, so the
+   viewport cannot jump. Content overflows inside the stage instead. */
+.stage{height:clamp(460px,66vh,760px);overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);padding:12px 14px;margin-bottom:12px}
+.stage.flow{height:auto;overflow:visible;overscroll-behavior:auto;border:none;border-radius:0;padding:0;background:transparent}
+.stage .story{margin-bottom:12px}
+.stage .legendbar{margin-bottom:0}
+
+/* ---------- worlds ---------- */
+.worlds{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;min-width:0}
+.panel-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.panel-head h3{font-size:13px}
+.panel-head .hint{margin-left:auto;font-size:10.5px;color:var(--faint)}
+.tag{font-size:10px;padding:2px 8px;border-radius:8px;font-weight:700;letter-spacing:.03em}
+.tag.cpu{background:rgba(79,143,247,.15);color:var(--cpu);border:1px solid var(--cpu)}
+.tag.gpu{background:rgba(176,124,247,.15);color:var(--gpu);border:1px solid var(--gpu)}
+.budget{font-size:11px;color:var(--muted);margin-bottom:10px}
+.budget b{color:var(--txt)}
+.delta{font-size:10px;padding:1px 7px;border-radius:8px;background:rgba(53,208,127,.1);color:var(--ok);border:1px solid rgba(53,208,127,.35);white-space:nowrap}
+.delta.warn{background:rgba(255,197,61,.1);color:var(--warn);border-color:rgba(255,197,61,.35)}
+h4{font-size:12px;color:var(--accent2);margin:12px 0 6px;font-weight:600}
+h4 .hint{font-weight:400;color:var(--faint);font-size:10.5px;margin-left:6px}
+
+/* queues */
+.queues{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px}
+.q{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-width:0}
+.qlabel{font-size:10.5px;color:var(--faint);display:block;margin-bottom:4px;letter-spacing:.03em}
+.qlabel .cap{color:var(--muted)}
+.qbody{display:flex;gap:4px;flex-wrap:wrap;min-width:0}
+.qchip{font-size:11px;padding:2px 8px;border-radius:8px;background:var(--panel3);border:1px solid var(--line);overflow-wrap:anywhere}
+.qchip.new{animation:qin .5s ease}
+@keyframes qin{0%{transform:scale(.6);opacity:.2}100%{transform:scale(1);opacity:1}}
+.qchip.leave{opacity:.35;text-decoration:line-through}
+
+/* request cards */
+.reqlist{display:flex;flex-direction:column;gap:6px}
+.req{width:100%;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:block}
+.req:hover{border-color:var(--line2)}
+.req.sel{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2)}
+.req.sched{animation:flash 1.2s ease 2;border-color:var(--accent)}
+.req.preempt{border-color:var(--preempt)}
+.req.finish{opacity:.55}
+.req.dim{opacity:.35}
+@keyframes flash{0%,100%{background:var(--panel2)}50%{background:rgba(79,143,247,.22)}}
+.req .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;gap:8px}
+.req .rid{font-weight:700}
+.st{font-size:10.5px;padding:2px 8px;border-radius:8px;white-space:nowrap}
+.st-RUNNING{background:rgba(53,208,127,.15);color:var(--ok)}
+.st-WAITING{background:rgba(132,148,176,.2);color:var(--txt)}
+.st-PREEMPTED{background:rgba(255,95,95,.15);color:var(--preempt)}
+.st-WAITING_FOR_REMOTE_KVS,.st-WAITING_FOR_STREAMING_REQ,.st-WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR{background:rgba(255,197,61,.15);color:var(--warn)}
+.bar{display:block;background:#0a0e16;border-radius:4px;height:15px;position:relative;overflow:hidden}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
+.bar .vals{position:absolute;inset:0;font-size:10px;color:#fff;display:flex;align-items:center;justify-content:center;text-shadow:0 1px 2px rgba(0,0,0,.8);font-variant-numeric:tabular-nums}
+.req .meta{font-size:10.5px;color:var(--muted);margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;overflow-wrap:anywhere}
+.req .meta .ph{color:var(--gpu)}
+.req .meta .chunk{color:var(--warn)}
+
+/* block pool */
+.pool{display:flex;flex-wrap:wrap;gap:4px}
+.blk{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;border:1px solid var(--line);color:#fff;position:relative}
+.blk.free{background:#0a0e16;color:var(--muted)}
+.blk.cached{outline:2px solid var(--warn);outline-offset:-1px}
+.blk.null{background:repeating-linear-gradient(45deg,#3a1220,#3a1220 3px,#2a0c16 3px,#2a0c16 6px);border-color:#6b2a3a;color:var(--null);font-weight:700}
+.blk.new{animation:ring 1s ease 2}
+.blk.sel{outline:2px solid #fff;outline-offset:1px;z-index:1}
+.blk.dim{opacity:.3}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(79,143,247,0)}50%{box-shadow:0 0 0 3px rgba(79,143,247,.6)}}
+.blk .tip{display:none;position:absolute;bottom:28px;left:50%;transform:translateX(-50%);background:#000;border:1px solid var(--line2);padding:4px 8px;border-radius:6px;font-size:10px;white-space:nowrap;z-index:20}
+.blk:hover .tip{display:block}
+.poolhint{font-size:10.5px;color:var(--faint);margin-top:6px}
+
+/* gpu: block table / slot mapping */
+.btrow,.smrow{display:flex;gap:6px;align-items:center;font-size:11.5px;margin-bottom:3px;flex-wrap:wrap}
+.btrow .rid,.smrow .rid{width:26px;font-weight:700;flex-shrink:0}
+.btrow.sel,.smrow.sel{background:rgba(79,143,247,.12);border-radius:6px;padding:1px 4px}
+.smrow .slots{display:flex;gap:3px;flex-wrap:wrap;min-width:0}
+.slotchip{font-size:9.5px;padding:1px 5px;border-radius:6px;background:var(--panel3);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.ibline{font-size:11px;color:var(--muted);margin-top:2px}
+.ibline b{color:var(--txt)}
+
+/* KV cache grid */
+.kvhead-row{display:flex;align-items:center;gap:10px;margin:2px 0 8px;flex-wrap:wrap}
+.toggle{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none}
+.toggle input{accent-color:var(--accent)}
+.kvgrid{display:flex;flex-wrap:wrap;gap:8px}
+.kvblock{border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#0a0e16;content-visibility:auto;contain-intrinsic-size:300px 40px;max-width:100%}
+.kvblock.sel-block{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2)}
+.kvbhead{font-size:9px;color:var(--muted);text-align:center;padding:2px 0;border-bottom:1px solid var(--line);background:#0d1220}
+.kvbhead b{color:var(--txt)}
+.kvblock.null{border-color:#6b2a3a;background:#1a0810}
+.kvblock.null .kvbhead{color:var(--null);background:#230813}
+.cells{display:flex;overflow-x:auto;max-width:100%}
+.kvblock .cell{width:var(--cell,26px);height:var(--cell,26px);flex-shrink:0;display:flex;align-items:center;justify-content:center;border-right:1px solid var(--line);border-bottom:1px solid var(--line);position:relative;font-size:10px;color:#fff;background:#121a2b;overflow:hidden;line-height:1}
+.kvblock .cell:last-child{border-right:none}
+.kvblock .cell.empty{background:#0a0e16;color:transparent}
+.kvblock .cell.null{background:repeating-linear-gradient(45deg,#2a0c16,#2a0c16 3px,#330f1c 3px,#330f1c 6px);border-color:#4a1a28}
+.kvblock .cell.nsel{opacity:.18}
+.kvblock .cell.sel{outline:2px solid #fff;outline-offset:-2px;z-index:1}
+.celltok{font-weight:700;line-height:1;padding:1px 3px;border-radius:3px;display:inline-block;transform-origin:center}
+.cell.new .celltok{animation:pop .45s ease}
+@keyframes pop{0%{transform:scale(.3);opacity:.2}70%{transform:scale(1.18)}100%{transform:scale(1);opacity:1}}
+.cellrid{position:absolute;top:1px;left:2px;font-size:7px;line-height:1;opacity:.95}
+.cellslot{position:absolute;right:1px;bottom:1px;font-size:6px;color:rgba(255,255,255,.35);font-style:normal;font-variant-numeric:tabular-nums}
+.kvfoot{font-size:10.5px;color:var(--faint);margin-top:8px;line-height:1.6}
+.kvfoot b{color:var(--muted)}
+
+/* special views */
+.special{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--gpu);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.special h3{font-size:13px;margin-bottom:8px}
+.special .legend{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6}
+.dp .row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;flex-wrap:wrap}
+.dp .row code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+.flag{padding:2px 8px;border-radius:8px;font-weight:600;font-size:11px}
+.flag.on{background:rgba(53,208,127,.15);color:var(--ok)}
+.flag.off{background:rgba(132,148,176,.2);color:var(--muted)}
+.pdcontainer{display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;margin-bottom:8px}
+.pdnode{border:1px solid var(--line);border-radius:10px;padding:10px;flex:1;min-width:230px;background:var(--panel2)}
+.pdn-prod{border-top:3px solid var(--cpu)}
+.pdn-cons{border-top:3px solid var(--gpu)}
+.pdtitle{font-size:12px;font-weight:600;margin-bottom:8px}
+.pdtitle small{color:var(--muted);font-weight:400}
+.pdarrow{display:flex;align-items:center;color:var(--faint);font-size:22px;font-weight:700}
+.pdarrow.transfer{color:var(--warn)}
+.pdreq{background:#0a0e16;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px}
+.pdhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;font-size:12px}
+.pdmeta{font-size:11px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+.pdmeta .chunk{color:var(--warn);font-size:10px;border:1px solid var(--warn);border-radius:6px;padding:0 4px;margin-left:4px}
+.pdtransfer{background:rgba(255,197,61,.12);border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px}
+.note{font-size:12px;color:var(--muted);padding:8px 0}
+
+/* ---------- legend ---------- */
+.legendbar{display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--faint);border-top:1px solid var(--line);padding-top:10px}
+.legendbar .lg{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
+.legendbar .lgs{display:flex;gap:5px;flex-wrap:wrap}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;border:1px solid var(--line)}
+.sw.req{width:12px;height:12px;border-radius:50%}
+
+/* Disable native scroll anchoring inside re-rendered regions so the JS
+   section-anchor restore below is the only thing that moves the viewport. */
+#main{overflow-anchor:none}
+
+@media (max-width:960px){.worlds{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+
+/* ================= lecture-specific styles ================= */
+.kvhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.kvhead h1{font-size:20px}
+.kvhead .sub{color:var(--muted);font-size:12.5px}
+.chapterbar{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.ctab{padding:7px 14px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:13px}
+.ctab:hover{background:var(--panel2);color:var(--txt)}
+.ctab.active{font-weight:700;color:var(--txt);border-color:var(--accent);background:rgba(79,143,247,.12)}
+.ctab .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+nav.secbar{display:flex;align-items:center;gap:8px;margin:10px 0;flex-wrap:wrap}
+nav.secbar button{padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:12.5px}
+nav.secbar button:hover{background:var(--panel3)}
+nav.secbar button:disabled{opacity:.4;cursor:default}
+.secinfo{font-size:12px;color:var(--muted);margin-left:auto}
+.sec-pips{display:flex;gap:3px;margin:8px 0;flex-wrap:wrap;align-items:center}
+.spip{width:14px;height:14px;border-radius:4px;border:1px solid var(--line);background:var(--panel3);cursor:pointer;padding:0}
+.spip.active{outline:2px solid var(--accent2);outline-offset:1px}
+.spip.done{background:var(--ok)}
+.story{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:var(--radius);padding:12px 16px;margin:10px 0}
+.story h2{font-size:15px;margin-bottom:6px}
+.story .crumb{font-size:11px;color:var(--faint);margin-bottom:4px}
+.body{display:flex;flex-direction:column;gap:14px}
+.blk{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.blk code,.story code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+.blk p{color:#c3cee0;font-size:13px;line-height:1.7;margin:0}
+.blk b{color:var(--txt)}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th,.tbl td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+.tbl th{background:var(--panel2);color:var(--txt);font-weight:600}
+.tbl td{color:#c3cee0}
+.tbl td b{color:var(--txt)}
+.coderef{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted)}
+.coderef .f{font-family:ui-monospace,monospace;color:var(--accent2)}
+.coderef .ln{font-family:ui-monospace,monospace;color:var(--warn)}
+.coderef .lab{color:var(--txt)}
+.callout{border:1px solid var(--warn);border-left:4px solid var(--warn);background:rgba(255,197,61,.07);border-radius:var(--radius);padding:10px 14px;font-size:12.5px;color:#d8c9a0;line-height:1.6}
+.callout b{color:#ffe1a0}
+
+/* model config card */
+.mcfg{display:flex;flex-direction:column;gap:10px}
+.mcfg .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mcfg .name{font-weight:700;font-size:14px}
+.mtag{font-size:10px;padding:2px 8px;border-radius:8px;font-weight:700;border:1px solid}
+.mtag.nbf{background:rgba(79,143,247,.15);color:var(--cpu);border-color:var(--cpu)}
+.mtag.packed{background:rgba(255,197,61,.15);color:var(--warn);border-color:var(--warn)}
+.mtag.uniform{background:rgba(176,124,247,.15);color:var(--gpu);border-color:var(--gpu)}
+.mtag.big{background:rgba(53,208,127,.15);color:var(--ok);border-color:var(--ok)}
+.mcfg .kpis{display:flex;gap:10px;flex-wrap:wrap}
+.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:110px}
+.kpi .v{font-size:18px;font-weight:700;color:var(--accent2);font-variant-numeric:tabular-nums}
+.kpi .l{font-size:10.5px;color:var(--faint);margin-top:2px}
+.mcfg h5{font-size:12px;color:var(--accent2);margin:6px 0 6px;font-weight:600}
+.grow{display:flex;flex-direction:column;gap:6px}
+.gcard{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel2)}
+.gcard .ghead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.gcard .gkind{font-size:10.5px;font-weight:700;color:var(--cpu)}
+.gcard .gmeta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.glayer{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:6px;background:var(--panel3);border:1px solid var(--line);margin:1px;color:#c3cee0}
+.tplan{display:flex;flex-direction:column;gap:4px}
+.trow{font-size:11px;color:var(--muted);font-family:ui-monospace,monospace}
+.trow b{color:var(--txt)}
+.slab{position:relative;border:1px solid var(--line2);border-radius:6px;overflow:hidden;margin-top:6px}
+.ssoil{height:34px;background:
+  repeating-linear-gradient(90deg,
+    rgba(79,143,247,.18) 0, rgba(79,143,247,.18) 46px, transparent 46px, transparent 52px)}
+.slab .seg{position:absolute;top:0;bottom:0;border-right:1px solid var(--line);background:rgba(79,143,247,.28)}
+
+/* diagrams */
+.dia{background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:14px;overflow-x:auto}
+.dia .cap{font-size:11px;color:var(--faint);margin-top:8px;line-height:1.6}
+.dimrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px}
+.dim{font-family:ui-monospace,monospace;padding:4px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel3);color:#c3cee0}
+.dim b{color:var(--accent2)}
+.arrow{color:var(--faint);font-size:16px}
+.chaintable{display:flex;flex-direction:column;gap:4px;font-size:11.5px}
+.chainrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:ui-monospace,monospace}
+.chainrow .k{width:64px;color:var(--faint)}
+.chainrow .v{color:var(--txt)}
+.chainrow .v.hl{color:var(--warn);font-weight:700}
+.conv{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:11.5px}
+.conv_var{display:inline-block;padding:2px 6px;border-radius:6px;border:1px solid var(--line);background:var(--panel3);font-family:ui-monospace,monospace;font-size:11px;color:var(--accent2)}
+.bar{display:block;background:#0a0e16;border-radius:4px;height:14px;position:relative;overflow:hidden;font-size:9.5px}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;background:var(--cpu)}
+.winrow{display:flex;gap:2px;align-items:center;font-size:10px;flex-wrap:wrap}
+.wtok{width:26px;height:26px;border-radius:4px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px}
+.wtok.out{background:linear-gradient(135deg,#3a1220,#2a0c16);border-color:#6b2a3a;color:var(--null)}
+.wtok.in{background:var(--panel3);color:#c3cee0}
+.wtok.cur{background:var(--ok)}
+
+/* mapping interactive */
+.mmap .mctrl{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.mmap .mctrl button{padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:12px}
+.mmap .mctrl button:disabled{opacity:.4}
+.slottab{width:100%;border-collapse:collapse;font-size:11.5px}
+.slottab th,.slottab td{border:1px solid var(--line);padding:4px 7px;text-align:center;font-family:ui-monospace,monospace}
+.slottab th{background:var(--panel2);color:var(--muted);font-size:10.5px}
+.slottab td.slot{color:var(--warn);font-weight:700}
+.slottab td.hl{background:rgba(255,197,61,.12)}
+
+@media (max-width:760px){.worlds{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="kvhead">
+  <h1>vLLM KV Cache 排布与逻辑↔物理映射</h1>
+  <span class="sub">不同模型结构的缓存差异 · L/B/H/N/C 维度排布 · 逻辑 slot → 物理地址</span>
+</header>
+
+<div class="chapterbar" id="chapterbar"></div>
+
+<nav class="secbar" id="secbar"></nav>
+<div class="sec-pips" id="secpips"></div>
+
+<section class="story" id="story"></section>
+<div class="body" id="body"></div>
+
+<script>
+const PAGE = {"chapters": [{"id": "logical", "title": "逻辑寻址", "color": "#4f8ff7", "sections": [{"title": "为什么 KV cache 要分块", "body": [{"t": "p", "md": "decode 每生成一个 token，注意力都要读它**之前所有 token** 的 K/V。若不缓存，每步得把整段历史重新算一遍，代价随序列长度 **O(n²) 增长**。"}, {"t": "p", "md": "KV cache 就是把这些 K/V 存进显存，用**固定的块（block/page）**管理。每个块固定装 **block_size 个 token** 的 KV，块是分配、释放、缓存的最小单元。"}, {"t": "p", "md": "分块（PagedAttention）相比 Transformers 的整段连续缓存："}, {"t": "table", "head": ["连续缓存", "vLLM 分块缓存"], "rows": [["一个序列预留连续整段，长度不定导致碎片", "块可散落，用 block table 记录每请求的块"], ["按最大序列长度预留 → 显存浪费", "按实际 token 用量动态分配/回收"], ["并发序列互相挤占", "块池共享，空闲块按需分配"]]}, {"t": "code", "file": "vllm/v1/worker/gpu/block_table.py", "line": 107, "label": "BlockTable：每请求的 block_id 表"}]}, {"title": "两个块层级：manager block 与 kernel block", "body": [{"t": "p", "md": "vLLM 里有两层块，千万别混："}, {"t": "table", "head": ["层级", "大小", "谁在用", "作用"], "rows": [["manager block", "`block_size`（如 4/16/64）", "scheduler / KVCacheManager", "逻辑分配、前缀缓存、引用计数"], ["kernel block", "`kernel_block_size`（如 16/64）", "attention 内核", "内核按固定粒度访问显存"]]}, {"t": "p", "md": "worker 把 manager block **展开**成若干 kernel block：设 `bpk = block_size // kernel_block_size`，manager 块 `b` 变成 `b*bpk + 0 … b*bpk + bpk-1` 共 `bpk` 个 kernel 块。"}, {"t": "code", "file": "vllm/v1/worker/gpu/block_table.py", "line": 118, "label": "append_block_ids：b -> b*bpk + k"}]}, {"title": "真实映射：pos → block → slot", "body": [{"t": "p", "md": "下面用真实 Scheduler 分配 2 个短请求，再按 worker 逻辑把每个 token 位置展开成 manager 块 → kernel 块 → 物理 slot。可切换调度步查看。"}, {"t": "mapping"}]}]}, {"id": "physical", "title": "物理布局", "color": "#b07cf7", "sections": [{"title": "原始分配与 KVCacheTensor", "body": [{"t": "p", "md": "物理上，KV cache 是一段段 **int8 原始字节**。`KVCacheConfig.kv_cache_tensors` 描述如何初始化：`size`（字节）、`shared_by`（共享该张量的层名）、`offset`（打包时层在该块 slab 内的字节偏移）、`block_stride`（打包时块步长）。"}, {"t": "code", "file": "vllm/v1/kv_cache_interface.py", "line": 1007, "label": "KVCacheTensor"}, {"t": "p", "md": "worker 先 `torch.zeros` 分配原始张量，再按各层 spec `reshape` 成注意力内核要的形状。"}, {"t": "code", "file": "vllm/v1/worker/gpu/attn_utils.py", "line": 199, "label": "_allocate_kv_cache"}]}, {"title": "num-blocks-first 与 L·B·H·N·C 维度顺序", "body": [{"t": "p", "md": "最常见的物理排布是 **num-blocks-first**：块是张量的第 0 维。注意力内核的 `get_kv_cache_shape` 给出**逻辑形状**，`get_kv_cache_stride_order` 给出到物理内存的排列。"}, {"t": "dia", "kind": "stride_order", "data": {}}, {"t": "p", "md": "对 FlashAttention，逻辑形状是 `(B, H, N, 2D)` —— K 与 V 沿最后一维拼接 （`2*head_size`），`N = block_size`。真正的物理顺序由 `get_kv_cache_stride_order` 决定："}, {"t": "dia", "kind": "stride_variants", "data": {}}, {"t": "code", "file": "vllm/v1/attention/backends/flash_attn.py", "line": 196, "label": "get_kv_cache_stride_order"}]}, {"title": "多组共享池（general case）", "body": [{"t": "p", "md": "当模型有**多个 kv_cache_group**（如 Mamba + 注意力），且各层页大小可统一时，物理上按 `group_size` 个池分配，**每个池被每个组的一层按同一层下标共享**。"}, {"t": "dia", "kind": "shared_pool", "data": {}}, {"t": "p", "md": "例如 3 组 `(full.0, full.1)`、`(sw.0, sw.2)`、`(sw.1, padding)`：`full.0 / sw.0 / sw.1` 共享一个 Tensor，`full.1 / sw.2` 共享另一个。"}, {"t": "code", "file": "vllm/v1/core/kv_cache_utils.py", "line": 1327, "label": "get_kv_cache_config_from_groups"}]}, {"title": "packed 打包布局（DeepSeek-V4）", "body": [{"t": "p", "md": "当各层页大小不同又无法统一（如 DeepSeek-V4 的 MLA 与 SWA-MLA），vLLM 改用 **packed 打包布局**：所有组叠进**同一块 slab**，每层在块内拥有一个字节 `offset`，块内总步长记在 `block_stride`。"}, {"t": "dia", "kind": "packed", "data": {}}, {"t": "code", "file": "vllm/v1/core/kv_cache_utils.py", "line": 1249, "label": "_get_packed_kv_cache_layout"}]}, {"title": "页填充与量化缩放", "body": [{"t": "p", "md": "某些布局要求页对齐：`page_size_padded` 会在每页后补字节，worker 用 `torch.as_strided` 跳过填充（num-blocks-first 才支持）。"}, {"t": "code", "file": "vllm/v1/worker/gpu/attn_utils.py", "line": 294, "label": "page_size_padded -> as_strided"}, {"t": "p", "md": "量化 KV（如 fp8 per-token-head、int4）时，每 token 的缩放因子也**从原始 KV 分配里切出**独立张量，需在 `page_size_bytes` 里计入。"}, {"t": "code", "file": "vllm/v1/kv_cache_interface.py", "line": 217, "label": "unpadded_page_size_bytes 计入 per-token scales"}]}]}, {"id": "models", "title": "模型差异", "color": "#35d07f", "sections": [{"title": "GQA Full Attention（Llama-7B）", "body": [{"t": "p", "md": "GQA：`num_kv_heads < num_query_heads`，多个 query head 共享一组 K/V。每 token 存 K/V 各 `num_kv_heads` 个 head，`head_size=128`，fp16。"}, {"t": "kvcfg", "model": "llama"}, {"t": "p", "md": "**关键数字**：每 token 单层 = 8 heads × 128 × 2 字节 × (K+V) = **4096 B**；16 token/块 → 每块 64 KiB。全模型 ×32 层。"}]}, {"title": "Sliding Window（Mistral-7B）", "body": [{"t": "p", "md": "滑窗注意力只保留最近 `sliding_window` 个 token。窗口外历史块的 KV 不再需要 → 替换为 null 块并释放，每请求 KV 上界 O(window) 而非 O(seq_len)。"}, {"t": "kvcfg", "model": "mistral"}, {"t": "dia", "kind": "swa", "data": {}}]}, {"title": "MLA（DeepSeek-V3/R1）", "body": [{"t": "p", "md": "MLA 把每层的 K/V 压缩进低秩潜在 `kv_lora`（=512），再叠加 RoPE 的 `k_rope`（=64），故 `head_size = 576`，`num_kv_heads = 1`。"}, {"t": "kvcfg", "model": "deepseek_v3"}, {"t": "p", "md": "fp8_ds_mla 自定义排布：每 token / 每层只占 **656 B**（对比 GQA 的 4096 B × 多 head），大幅省显存。压缩的是**缓存内容**，不是块结构。"}, {"t": "dia", "kind": "mla", "data": {}}]}, {"title": "DeepSeek Sparse Attention（DSA）", "body": [{"t": "p", "md": "DSA 在滑窗基础上，用 **indexer** 为每个 query 选出 top-k 个全局 token 参与注意力。**稀疏只改变『注意哪些 token』，KV cache 布局与 MLA 完全相同** —— 仍是压缩潜在 + k_rope，num_kv_heads=1。"}, {"t": "kvcfg", "model": "dsa"}, {"t": "p", "md": "所以在排布层面，DSA ≈ MLA；区别体现在注意力后端（`DeepseekSparseSWABackend`）与稀疏索引，而非缓存张量。"}, {"t": "code", "file": "vllm/v1/attention/backends/mla/sparse_swa.py", "line": 112, "label": "DeepseekSparseSWABackend"}]}, {"title": "Hybrid：Mamba + Full Attention（Jamba）", "body": [{"t": "p", "md": "Mamba 层不存 token 化的 K/V，而是每块存一段**状态**（conv + ssm），物理上以 `[num_blocks, 1, 1, page_size_bytes]` 的页视图存放。"}, {"t": "kvcfg", "model": "jamba"}, {"t": "p", "md": "Mamba 与注意力形成**多个 kv_cache_group**，各自独立 block table，但共享同一 BlockPool。块大小可能在页统一时被拉大（下面 Mamba 组 bs=16、注意力组 bs=64）。"}, {"t": "dia", "kind": "mamba", "data": {}}]}, {"title": "六模型排布对比", "body": [{"t": "p", "md": "全部由真实 `get_kv_cache_groups` + `get_kv_cache_config_from_groups` 计算（8 GiB KV 显存，block_size=16）。"}, {"t": "kvcfg_compare", "models": ["llama", "mistral", "deepseek_v3", "dsa", "jamba", "deepseek_v4"]}]}]}, {"id": "hybrid", "title": "Hybrid 多组", "color": "#ffc53d", "sections": [{"title": "kv_cache_group 与块大小统一", "body": [{"t": "p", "md": "具同一 KV cache 规格的层归为一组（`KVCacheGroupSpec`）。每组的 `block_size` 可能不同。上层用两个额外粒度协调："}, {"t": "table", "head": ["粒度", "取值", "作用"], "rows": [["scheduler_block_size", "各 group block_size 的 **LCM**", "调度器 token 对齐"], ["hash_block_size", "各 group block_size 的 **GCD**", "前缀缓存最低匹配粒度"]]}, {"t": "code", "file": "vllm/v1/core/kv_cache_utils.py", "line": 607, "label": "resolve_kv_cache_block_sizes"}]}, {"title": "一组 BlockPool，多组 BlockTable", "body": [{"t": "p", "md": "所有 group 共享同一个 `BlockPool`（同一批 KVCacheBlock、同一空闲队列），但**每个 group 各自维护 `req_to_blocks`（block table）**。调度器按 LCM 粒度对齐后，把每个 group 的块分别写入各自的表。"}, {"t": "dia", "kind": "hybrid_groups", "data": {}}, {"t": "code", "file": "vllm/v1/core/kv_cache_coordinator.py", "line": 63, "label": "KVCacheCoordinator 协调多组"}]}, {"title": "DeepSeek-V4 的 UniformType 打包", "body": [{"t": "p", "md": "DeepSeek-V4 的 MLA 与不同窗口的 SWA-MLA 页大小不同 → 按 `(block_size, sliding_window)` 分组为多个 `UniformTypeKVCacheSpecs`，再走 packed 布局：组各自在 slab 里排布，层按字节偏移。"}, {"t": "kvcfg", "model": "deepseek_v4"}, {"t": "dia", "kind": "packed", "data": {}}, {"t": "code", "file": "vllm/v1/core/kv_cache_utils.py", "line": 1545, "label": "group_and_unify_kv_cache_specs"}]}]}, {"id": "mapping", "title": "逻辑→物理链路", "color": "#ff6b6b", "sections": [{"title": "完整链路", "body": [{"t": "p", "md": "把前面几章串起来，一个逻辑 token 位置映射到物理缓存地址的完整链路："}, {"t": "dia", "kind": "slot_chain", "data": {}}, {"t": "p", "md": "公式：`pos // block_size` = manager 块索引 → 查 BlockPool 得 manager `block_id`；`block_id * bpk + (pos % block_size) // kernel_block_size` = kernel 块；`slot = kernel_block_id * kernel_block_size + (pos % kernel_block_size)`。内核再以 `base + layer_offset + slot * stride` 定位。"}, {"t": "code", "file": "vllm/v1/worker/gpu/block_table.py", "line": 262, "label": "_compute_slot_mappings_kernel"}]}, {"title": "跨层 KV sharing 与量化缩放", "body": [{"t": "p", "md": "层可以 **别名** 到目标层的 KV 张量（`kv_sharing_target_layer_name`），多个 Attention 模块共享同一份缓存，不重复分配。"}, {"t": "code", "file": "vllm/v1/worker/gpu/attn_utils.py", "line": 460, "label": "共享层 -> 目标层张量"}, {"t": "p", "md": "量化每 token/每 head 的缩放张量从原始 KV 分配中切出，由注意力后端托管，但字节在 `page_size_bytes` 中已预算。"}]}]}, {"id": "compare", "title": "实战对比", "color": "#22d3ee", "sections": [{"title": "从模型 config 到 KV cache 张量", "body": [{"t": "p", "md": "一个模型结构 → 一组 kv_cache_group + 一个张量计划。下面用真实 vLLM 规划代码（`get_kv_cache_groups` + `get_kv_cache_config_from_groups`）对 6 种结构在同一 8 GiB 显存、block_size=16 下算出结果。"}, {"t": "kvcfg_compare", "models": ["llama", "mistral", "deepseek_v3", "dsa", "jamba", "deepseek_v4"]}]}, {"title": "读图要点", "body": [{"t": "p", "md": "**每 token 字节是核心差异**：GQA 贵在 KV head 数多；MLA 靠压缩潜在把单 token 压到数百字节；Mamba 存的是固定状态而非 token。"}, {"t": "p", "md": "**布局决定并发容量**：`num_blocks` 越大，能同时跑的序列/上下文越多。MLA/DSA 因每 token 字节小，`num_blocks` 是 GQA 的数倍。"}, {"t": "p", "md": "**packed vs num-blocks-first**：层页大小统一 → num-blocks-first；不统一 → packed。这是 DeepSeek-V4 与大多数模型在物理排布上的分水岭。"}]}]}], "data": {"models": {"llama": {"name": "llama", "label": "Llama-7B · GQA Full Attention", "note": "GQA 全注意力：每 token 存 num_kv_heads(=8) 组 K/V，head_size=128，fp16。所有层规格相同 → 归为 1 个 kv_cache_group。", "num_blocks": 4096, "available_memory_bytes": 8589934592, "layout": "num-blocks-first", "groups": [{"kind": "FullAttentionSpec", "num_layers": 32, "layer_names": ["model.layers.0.self_attn", "model.layers.1.self_attn", "model.layers.2.self_attn", "model.layers.3.self_attn", "model.layers.4.self_attn", "model.layers.5.self_attn", "model.layers.6.self_attn", "model.layers.7.self_attn", "model.layers.8.self_attn", "model.layers.9.self_attn", "model.layers.10.self_attn", "model.layers.11.self_attn", "model.layers.12.self_attn", "model.layers.13.self_attn", "model.layers.14.self_attn", "model.layers.15.self_attn", "model.layers.16.self_attn", "model.layers.17.self_attn", "model.layers.18.self_attn", "model.layers.19.self_attn", "model.layers.20.self_attn", "model.layers.21.self_attn", "model.layers.22.self_attn", "model.layers.23.self_attn", "model.layers.24.self_attn", "model.layers.25.self_attn", "model.layers.26.self_attn", "model.layers.27.self_attn", "model.layers.28.self_attn", "model.layers.29.self_attn", "model.layers.30.self_attn", "model.layers.31.self_attn"], "block_size": 16, "page_size_bytes": 65536, "per_token_bytes": 4096, "num_kv_heads": 8, "head_size": 128, "kv_quant_mode": "NONE"}], "tensors": [{"size": 268435456, "shared_by": ["model.layers.0.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.1.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.2.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.3.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.4.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.5.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.6.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.7.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.8.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.9.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.10.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.11.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.12.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.13.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.14.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.15.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.16.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.17.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.18.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.19.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.20.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.21.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.22.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.23.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.24.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.25.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.26.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.27.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.28.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.29.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.30.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.31.self_attn"], "offset": 0, "block_stride": 0}], "num_tensors": 32}, "mistral": {"name": "mistral", "label": "Mistral-7B · Sliding Window", "note": "滑窗注意力：窗口外历史 token 不再参与注意力，其块被替换为 null 块并释放，每请求 KV 上界 O(window)，而非 O(seq_len)。", "num_blocks": 4096, "available_memory_bytes": 8589934592, "layout": "num-blocks-first", "groups": [{"kind": "SlidingWindowSpec", "num_layers": 32, "layer_names": ["model.layers.0.self_attn", "model.layers.1.self_attn", "model.layers.2.self_attn", "model.layers.3.self_attn", "model.layers.4.self_attn", "model.layers.5.self_attn", "model.layers.6.self_attn", "model.layers.7.self_attn", "model.layers.8.self_attn", "model.layers.9.self_attn", "model.layers.10.self_attn", "model.layers.11.self_attn", "model.layers.12.self_attn", "model.layers.13.self_attn", "model.layers.14.self_attn", "model.layers.15.self_attn", "model.layers.16.self_attn", "model.layers.17.self_attn", "model.layers.18.self_attn", "model.layers.19.self_attn", "model.layers.20.self_attn", "model.layers.21.self_attn", "model.layers.22.self_attn", "model.layers.23.self_attn", "model.layers.24.self_attn", "model.layers.25.self_attn", "model.layers.26.self_attn", "model.layers.27.self_attn", "model.layers.28.self_attn", "model.layers.29.self_attn", "model.layers.30.self_attn", "model.layers.31.self_attn"], "block_size": 16, "page_size_bytes": 65536, "per_token_bytes": 4096, "num_kv_heads": 8, "head_size": 128, "kv_quant_mode": "NONE", "sliding_window": 4096}], "tensors": [{"size": 268435456, "shared_by": ["model.layers.0.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.1.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.2.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.3.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.4.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.5.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.6.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.7.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.8.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.9.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.10.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.11.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.12.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.13.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.14.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.15.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.16.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.17.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.18.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.19.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.20.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.21.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.22.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.23.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.24.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.25.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.26.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.27.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.28.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.29.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.30.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268435456, "shared_by": ["model.layers.31.self_attn"], "offset": 0, "block_stride": 0}], "num_tensors": 32}, "deepseek_v3": {"name": "deepseek_v3", "label": "DeepSeek-V3/R1 · MLA", "note": "MLA：把 K/V 压缩进一个低秩潜在 kv_lora(=512) 再叠加 RoPE 的 k_rope(=64)，故 head_size=576，num_kv_heads=1。fp8_ds_mla 自定义排布：每 token 656B。", "num_blocks": 13416, "available_memory_bytes": 8589934592, "layout": "num-blocks-first", "groups": [{"kind": "MLAAttentionSpec", "num_layers": 61, "layer_names": ["model.layers.0.self_attn", "model.layers.1.self_attn", "model.layers.2.self_attn", "model.layers.3.self_attn", "model.layers.4.self_attn", "model.layers.5.self_attn", "model.layers.6.self_attn", "model.layers.7.self_attn", "model.layers.8.self_attn", "model.layers.9.self_attn", "model.layers.10.self_attn", "model.layers.11.self_attn", "model.layers.12.self_attn", "model.layers.13.self_attn", "model.layers.14.self_attn", "model.layers.15.self_attn", "model.layers.16.self_attn", "model.layers.17.self_attn", "model.layers.18.self_attn", "model.layers.19.self_attn", "model.layers.20.self_attn", "model.layers.21.self_attn", "model.layers.22.self_attn", "model.layers.23.self_attn", "model.layers.24.self_attn", "model.layers.25.self_attn", "model.layers.26.self_attn", "model.layers.27.self_attn", "model.layers.28.self_attn", "model.layers.29.self_attn", "model.layers.30.self_attn", "model.layers.31.self_attn", "model.layers.32.self_attn", "model.layers.33.self_attn", "model.layers.34.self_attn", "model.layers.35.self_attn", "model.layers.36.self_attn", "model.layers.37.self_attn", "model.layers.38.self_attn", "model.layers.39.self_attn", "model.layers.40.self_attn", "model.layers.41.self_attn", "model.layers.42.self_attn", "model.layers.43.self_attn", "model.layers.44.self_attn", "model.layers.45.self_attn", "model.layers.46.self_attn", "model.layers.47.self_attn", "model.layers.48.self_attn", "model.layers.49.self_attn", "model.layers.50.self_attn", "model.layers.51.self_attn", "model.layers.52.self_attn", "model.layers.53.self_attn", "model.layers.54.self_attn", "model.layers.55.self_attn", "model.layers.56.self_attn", "model.layers.57.self_attn", "model.layers.58.self_attn", "model.layers.59.self_attn", "model.layers.60.self_attn"], "block_size": 16, "page_size_bytes": 10496, "per_token_bytes": 656, "num_kv_heads": 1, "head_size": 576, "kv_quant_mode": "NONE", "kv_lora_rank": 512, "qk_rope_head_dim": 64, "cache_dtype_str": "fp8_ds_mla", "compress_ratio": 1, "storage_block_size": 16}], "tensors": [{"size": 140814336, "shared_by": ["model.layers.0.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.1.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.2.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.3.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.4.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.5.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.6.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.7.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.8.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.9.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.10.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.11.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.12.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.13.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.14.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.15.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.16.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.17.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.18.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.19.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.20.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.21.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.22.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.23.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.24.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.25.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.26.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.27.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.28.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.29.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.30.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.31.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.32.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.33.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.34.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.35.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.36.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.37.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.38.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.39.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.40.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.41.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.42.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.43.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.44.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.45.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.46.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.47.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.48.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.49.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.50.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.51.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.52.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.53.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.54.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.55.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.56.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.57.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.58.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.59.self_attn"], "offset": 0, "block_stride": 0}, {"size": 140814336, "shared_by": ["model.layers.60.self_attn"], "offset": 0, "block_stride": 0}], "num_tensors": 61}, "deepseek_v4": {"name": "deepseek_v4", "label": "DeepSeek-V4 · MLA + SWA (packed)", "note": "DeepSeek-V4：一部分层是 MLA、其余是不同窗口的 SWA-MLA，页大小不同 → 按 UniformType 分组，并采用 **packed 打包布局**（单 slab、逐层字节偏移 + block_stride）。", "num_blocks": 334290, "available_memory_bytes": 8589934592, "layout": "packed", "groups": [{"kind": "uniform_type", "num_layers": 11, "layer_names": ["model.layers.0.self_attn", "model.layers.3.self_attn", "model.layers.6.self_attn", "model.layers.9.self_attn", "model.layers.12.self_attn", "model.layers.15.self_attn", "model.layers.18.self_attn", "model.layers.21.self_attn", "model.layers.24.self_attn", "model.layers.27.self_attn", "model.layers.30.self_attn"], "block_size": 16, "page_size_bytes": 12848, "per_token_bytes": 803}, {"kind": "uniform_type", "num_layers": 11, "layer_names": ["model.layers.1.self_attn", "model.layers.4.self_attn", "model.layers.7.self_attn", "model.layers.10.self_attn", "model.layers.13.self_attn", "model.layers.16.self_attn", "model.layers.19.self_attn", "model.layers.22.self_attn", "model.layers.25.self_attn", "model.layers.28.self_attn", "model.layers.31.self_attn"], "block_size": 16, "page_size_bytes": 25696, "per_token_bytes": 1606}, {"kind": "uniform_type", "num_layers": 10, "layer_names": ["model.layers.2.self_attn", "model.layers.5.self_attn", "model.layers.8.self_attn", "model.layers.11.self_attn", "model.layers.14.self_attn", "model.layers.17.self_attn", "model.layers.20.self_attn", "model.layers.23.self_attn", "model.layers.26.self_attn", "model.layers.29.self_attn"], "block_size": 16, "page_size_bytes": 23360, "per_token_bytes": 1460}], "tensors": [{"size": 8589915840, "shared_by": ["model.layers.0.self_attn", "model.layers.1.self_attn", "model.layers.2.self_attn"], "offset": 0, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.3.self_attn"], "offset": 1168, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.6.self_attn", "model.layers.4.self_attn", "model.layers.5.self_attn"], "offset": 2336, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.9.self_attn"], "offset": 3504, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.12.self_attn", "model.layers.7.self_attn", "model.layers.8.self_attn"], "offset": 4672, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.15.self_attn"], "offset": 5840, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.18.self_attn", "model.layers.10.self_attn", "model.layers.11.self_attn"], "offset": 7008, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.21.self_attn"], "offset": 8176, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.24.self_attn", "model.layers.13.self_attn", "model.layers.14.self_attn"], "offset": 9344, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.27.self_attn"], "offset": 10512, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.30.self_attn", "model.layers.16.self_attn", "model.layers.17.self_attn"], "offset": 11680, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.19.self_attn", "model.layers.20.self_attn"], "offset": 14016, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.22.self_attn", "model.layers.23.self_attn"], "offset": 16352, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.25.self_attn", "model.layers.26.self_attn"], "offset": 18688, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.28.self_attn", "model.layers.29.self_attn"], "offset": 21024, "block_stride": 25696}, {"size": 8589915840, "shared_by": ["model.layers.31.self_attn"], "offset": 23360, "block_stride": 25696}], "num_tensors": 16}, "jamba": {"name": "jamba", "label": "Jamba · Mamba + Full Attention hybrid", "note": "Hybrid：Mamba 层（存 conv/ssm 状态块）与 FullAttention 层交错，形成 2 个 kv_cache_group，各自独立 block table，但共享同一 BlockPool。", "num_blocks": 5461, "available_memory_bytes": 8589934592, "layout": "num-blocks-first", "groups": [{"kind": "MambaSpec", "num_layers": 6, "layer_names": ["model.layers.0.mamba", "model.layers.4.mamba", "model.layers.8.mamba", "model.layers.12.mamba", "model.layers.16.mamba", "model.layers.20.mamba"], "block_size": 16, "page_size_bytes": 262144, "per_token_bytes": 16384, "shapes": [[16, 4096]], "mamba_cache_mode": "align"}, {"kind": "FullAttentionSpec", "num_layers": 6, "layer_names": ["model.layers.1.self_attn", "model.layers.5.self_attn", "model.layers.9.self_attn", "model.layers.13.self_attn", "model.layers.17.self_attn", "model.layers.21.self_attn"], "block_size": 64, "page_size_bytes": 262144, "per_token_bytes": 4096, "num_kv_heads": 8, "head_size": 128, "kv_quant_mode": "NONE"}, {"kind": "FullAttentionSpec", "num_layers": 6, "layer_names": ["model.layers.2.self_attn", "model.layers.6.self_attn", "model.layers.10.self_attn", "model.layers.14.self_attn", "model.layers.18.self_attn", "model.layers.22.self_attn"], "block_size": 64, "page_size_bytes": 262144, "per_token_bytes": 4096, "num_kv_heads": 8, "head_size": 128, "kv_quant_mode": "NONE"}, {"kind": "FullAttentionSpec", "num_layers": 6, "layer_names": ["model.layers.3.self_attn", "model.layers.7.self_attn", "model.layers.11.self_attn", "model.layers.15.self_attn", "model.layers.19.self_attn", "model.layers.23.self_attn"], "block_size": 64, "page_size_bytes": 262144, "per_token_bytes": 4096, "num_kv_heads": 8, "head_size": 128, "kv_quant_mode": "NONE"}], "tensors": [{"size": 1431568384, "shared_by": ["model.layers.0.mamba", "model.layers.1.self_attn", "model.layers.2.self_attn", "model.layers.3.self_attn"], "offset": 0, "block_stride": 0}, {"size": 1431568384, "shared_by": ["model.layers.4.mamba", "model.layers.5.self_attn", "model.layers.6.self_attn", "model.layers.7.self_attn"], "offset": 0, "block_stride": 0}, {"size": 1431568384, "shared_by": ["model.layers.8.mamba", "model.layers.9.self_attn", "model.layers.10.self_attn", "model.layers.11.self_attn"], "offset": 0, "block_stride": 0}, {"size": 1431568384, "shared_by": ["model.layers.12.mamba", "model.layers.13.self_attn", "model.layers.14.self_attn", "model.layers.15.self_attn"], "offset": 0, "block_stride": 0}, {"size": 1431568384, "shared_by": ["model.layers.16.mamba", "model.layers.17.self_attn", "model.layers.18.self_attn", "model.layers.19.self_attn"], "offset": 0, "block_stride": 0}, {"size": 1431568384, "shared_by": ["model.layers.20.mamba", "model.layers.21.self_attn", "model.layers.22.self_attn", "model.layers.23.self_attn"], "offset": 0, "block_stride": 0}], "num_tensors": 6}, "dsa": {"name": "dsa", "label": "DeepSeek Sparse Attention · DSA", "note": "DSA（DeepSeek Sparse Attention）：局部滑窗 + 全局 top-k 索引（indexer）。稀疏只改变『注意力关系』，KV cache 布局与 MLA 完全相同。", "num_blocks": 14563, "available_memory_bytes": 8589934592, "layout": "num-blocks-first", "groups": [{"kind": "SlidingWindowMLASpec", "num_layers": 32, "layer_names": ["model.layers.0.self_attn", "model.layers.1.self_attn", "model.layers.2.self_attn", "model.layers.3.self_attn", "model.layers.4.self_attn", "model.layers.5.self_attn", "model.layers.6.self_attn", "model.layers.7.self_attn", "model.layers.8.self_attn", "model.layers.9.self_attn", "model.layers.10.self_attn", "model.layers.11.self_attn", "model.layers.12.self_attn", "model.layers.13.self_attn", "model.layers.14.self_attn", "model.layers.15.self_attn", "model.layers.16.self_attn", "model.layers.17.self_attn", "model.layers.18.self_attn", "model.layers.19.self_attn", "model.layers.20.self_attn", "model.layers.21.self_attn", "model.layers.22.self_attn", "model.layers.23.self_attn", "model.layers.24.self_attn", "model.layers.25.self_attn", "model.layers.26.self_attn", "model.layers.27.self_attn", "model.layers.28.self_attn", "model.layers.29.self_attn", "model.layers.30.self_attn", "model.layers.31.self_attn"], "block_size": 16, "page_size_bytes": 18432, "per_token_bytes": 1152, "num_kv_heads": 1, "head_size": 576, "kv_quant_mode": "NONE", "kv_lora_rank": 512, "qk_rope_head_dim": 64, "cache_dtype_str": "fp8_ds_mla", "compress_ratio": 1, "storage_block_size": 16, "sliding_window": 4096}], "tensors": [{"size": 268425216, "shared_by": ["model.layers.0.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.1.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.2.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.3.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.4.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.5.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.6.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.7.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.8.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.9.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.10.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.11.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.12.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.13.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.14.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.15.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.16.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.17.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.18.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.19.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.20.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.21.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.22.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.23.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.24.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.25.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.26.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.27.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.28.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.29.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.30.self_attn"], "offset": 0, "block_stride": 0}, {"size": 268425216, "shared_by": ["model.layers.31.self_attn"], "offset": 0, "block_stride": 0}], "num_tensors": 32}}, "mapping": {"block_size": 4, "kernel_block_size": 2, "bpk": 2, "steps": [{"step": 0, "block_size": 4, "kernel_block_size": 2, "bpk": 2, "requests": {"A": {"manager_blocks": [1, 2], "kernel_blocks": [2, 3, 4, 5], "computed": 6, "num_tokens": 6, "slot_map": [{"pos": 0, "manager_block_idx": 0, "manager_block_id": 1, "kernel_block_id": 2, "slot": 4}, {"pos": 1, "manager_block_idx": 0, "manager_block_id": 1, "kernel_block_id": 2, "slot": 5}, {"pos": 2, "manager_block_idx": 0, "manager_block_id": 1, "kernel_block_id": 3, "slot": 6}, {"pos": 3, "manager_block_idx": 0, "manager_block_id": 1, "kernel_block_id": 3, "slot": 7}, {"pos": 4, "manager_block_idx": 1, "manager_block_id": 2, "kernel_block_id": 4, "slot": 8}, {"pos": 5, "manager_block_idx": 1, "manager_block_id": 2, "kernel_block_id": 4, "slot": 9}]}, "B": {"manager_blocks": [3], "kernel_blocks": [6, 7], "computed": 4, "num_tokens": 4, "slot_map": [{"pos": 0, "manager_block_idx": 0, "manager_block_id": 3, "kernel_block_id": 6, "slot": 12}, {"pos": 1, "manager_block_idx": 0, "manager_block_id": 3, "kernel_block_id": 6, "slot": 13}, {"pos": 2, "manager_block_idx": 0, "manager_block_id": 3, "kernel_block_id": 7, "slot": 14}, {"pos": 3, "manager_block_idx": 0, "manager_block_id": 3, "kernel_block_id": 7, "slot": 15}]}}, "scheduled": {"A": 6, "B": 4}}, {"step": 1, "block_size": 4, "kernel_block_size": 2, "bpk": 2, "requests": {"A": {"manager_blocks": [1, 2], "kernel_blocks": [2, 3, 4, 5], "computed": 7, "num_tokens": 7, "slot_map": [{"pos": 0, "manager_block_idx": 0, "manager_block_id": 1, "kernel_block_id": 2, "slot": 4}, {"pos": 1, "manager_block_idx": 0, "manager_block_id": 1, "kernel_block_id": 2, "slot": 5}, {"pos": 2, "manager_block_idx": 0, "manager_block_id": 1, "kernel_block_id": 3, "slot": 6}, {"pos": 3, "manager_block_idx": 0, "manager_block_id": 1, "kernel_block_id": 3, "slot": 7}, {"pos": 4, "manager_block_idx": 1, "manager_block_id": 2, "kernel_block_id": 4, "slot": 8}, {"pos": 5, "manager_block_idx": 1, "manager_block_id": 2, "kernel_block_id": 4, "slot": 9}, {"pos": 6, "manager_block_idx": 1, "manager_block_id": 2, "kernel_block_id": 5, "slot": 10}]}, "B": {"manager_blocks": [3, 4], "kernel_blocks": [6, 7, 8, 9], "computed": 5, "num_tokens": 5, "slot_map": [{"pos": 0, "manager_block_idx": 0, "manager_block_id": 3, "kernel_block_id": 6, "slot": 12}, {"pos": 1, "manager_block_idx": 0, "manager_block_id": 3, "kernel_block_id": 6, "slot": 13}, {"pos": 2, "manager_block_idx": 0, "manager_block_id": 3, "kernel_block_id": 7, "slot": 14}, {"pos": 3, "manager_block_idx": 0, "manager_block_id": 3, "kernel_block_id": 7, "slot": 15}, {"pos": 4, "manager_block_idx": 1, "manager_block_id": 4, "kernel_block_id": 8, "slot": 16}]}}, "scheduled": {"A": 1, "B": 1}}, {"step": 2, "block_size": 4, "kernel_block_size": 2, "bpk": 2, "requests": {}, "scheduled": {}}]}}};
+let curCh = 0, curSec = 0;
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function md(s){ return esc(s).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'); }
+function fmtBytes(n){ if(n>=1e9) return (n/1e9).toFixed(1)+' GB'; if(n>=1e6) return (n/1e6).toFixed(1)+' MB'; if(n>=1e3) return (n/1e3).toFixed(1)+' KB'; return n+' B'; }
+
+function activeChapter(){ return PAGE.chapters[curCh]; }
+function activeSection(){ return activeChapter().sections[curSec]; }
+
+function renderChapters(){
+  const el = document.getElementById('chapterbar');
+  el.innerHTML = PAGE.chapters.map((c,i)=>
+    `<button class="ctab ${i===curCh?'active':''}" onclick="goChapter(${i})">
+      <span class="dot" style="background:${c.color}"></span>${esc(c.title)}</button>`).join('');
+}
+function renderPips(){
+  const secs = activeChapter().sections;
+  const el = document.getElementById('secpips');
+  el.innerHTML = secs.map((s,i)=>
+    `<button class="spip ${i===curSec?'active':''} ${i<curSec?'done':''}" title="${esc(s.title)}"
+       aria-label="第 ${i+1} 节：${esc(s.title)}" onclick="goSection(${i})"></button>`).join('');
+}
+function renderSecbar(){
+  const ch = activeChapter();
+  const el = document.getElementById('secbar');
+  const ci = PAGE.chapters.indexOf(ch);
+  el.innerHTML = `
+    <button ${curSec<=0?'disabled':''} onclick="goSection(${curSec-1})">‹ 上一节</button>
+    <button ${curSec>=ch.sections.length-1?'disabled':''} onclick="goSection(${curSec+1})">下一节 ›</button>
+    <button onclick="goChapter(${ci-1})" ${ci<=0?'disabled':''}>‹ 上一章</button>
+    <button onclick="goChapter(${ci+1})" ${ci>=PAGE.chapters.length-1?'disabled':''}>下一章 ›</button>
+    <span class="secinfo tnum">${ch.title} · 第 ${curSec+1}/${ch.sections.length} 节</span>`;
+}
+function renderStory(){
+  const ch = activeChapter(), s = activeSection();
+  document.getElementById('story').innerHTML =
+    `<div class="crumb">${esc(ch.title)} · 小计 ${curSec+1}/${ch.sections.length}</div>
+     <h2>${esc(s.title)}</h2>`;
+}
+function renderBody(){
+  const s = activeSection();
+  document.getElementById('body').innerHTML = s.body.map(renderBlock).join('');
+}
+function render(){
+  renderChapters(); renderPips(); renderSecbar(); renderStory(); renderBody();
+  const st=document.getElementById('story'); if(st) st.scrollIntoView({block:'nearest'});
+}
+function goChapter(i){ if(i<0||i>=PAGE.chapters.length) return; curCh=i; curSec=0; render(); syncHash(); }
+function goSection(i){ const n=activeChapter().sections.length; curSec=Math.max(0,Math.min(n-1,i)); render(); syncHash(); }
+function syncHash(){ try{ history.replaceState(null,'','#'+activeChapter().id+'/'+curSec); }catch(e){} }
+function parseHash(){
+  const h=location.hash.replace(/^#/,''); if(!h) return;
+  const [cid,si]=h.split('/');
+  const ci=PAGE.chapters.findIndex(c=>c.id===cid);
+  if(ci>=0){ curCh=ci; if(si!=null) curSec=+si||0; }
+}
+
+// ---------------- block renderers ----------------
+function renderBlock(b){
+  switch(b.t){
+    case 'p': return `<div class="blk"><p>${md(b.md)}</p></div>`;
+    case 'callout': return `<div class="callout">${md(b.md)}</div>`;
+    case 'code': return `<div class="blk"><span class="coderef">
+        <span class="f">${esc(b.file)}</span><span class="ln">:${b.line}</span>
+        ${b.label?`<span class="lab">· ${esc(b.label)}</span>`:''}</span></div>`;
+    case 'table': return `<div class="blk"><table class="tbl">
+        <thead><tr>${b.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${b.rows.map(r=>`<tr>${r.map(c=>`<td>${md(String(c))}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table></div>`;
+    case 'kvcfg': return renderKvcfg(PAGE.data.models[b.model]);
+    case 'kvcfg_compare': return `<div class="blk">${b.models.map(m=>renderKvcfg(PAGE.data.models[m],true)).join('<hr style="border-color:var(--line)">')}</div>`;
+    case 'mapping': return renderMapping(PAGE.data.mapping);
+    case 'dia': return renderDia(b.kind, b.data, curSec);
+    default: return '';
+  }
+}
+
+function renderKvcfg(m, compact=false){
+  const tagCls = m.layout==='packed'?'packed':(m.layout==='uniform_type'?'uniform':'nbf');
+  const tagTxt = m.layout==='packed'?'PACKED':(m.layout==='uniform_type'?'UNIFORM-TYPE':'NUM-BLOCKS-FIRST');
+  const maxTok = Math.max.apply(null, m.groups.map(g=>g.per_token_bytes));
+  const groupsHtml = m.groups.map(g=>{
+    const widthPct = Math.round(g.per_token_bytes/maxTok*100);
+    return `<div class="gcard">
+      <div class="ghead"><span class="gkind">${esc(g.kind)}</span>
+        <span class="gmeta">${g.num_layers} 层 · block_size=${g.block_size} · 每 token ${g.per_token_bytes} B · 每块 ${fmtBytes(g.page_size_bytes)}</span></div>
+      <div class="bar"><div class="fill" style="width:${widthPct}%"></div></div>
+      <div style="margin-top:6px">${g.layer_names.slice(0,12).map(l=>`<span class="glayer">${esc(l.split('.').slice(-2).join('.'))}</span>`).join('')}${g.num_layers>12?`<span class="glayer">…+${g.num_layers-12}</span>`:''}</div>
+    </div>`;
+  }).join('');
+  const packedHtml = m.layout==='packed' ? `<h5>物理张量计划（packed 单 slab）</h5>
+    <div class="tplan"><div class="trow">block_stride = <b>${fmtBytes(m.tensors[0].block_stride)}</b> · 每个 block 内逐层偏移：</div>
+      <div class="slab" style="height:34px">${m.tensors.slice(0,16).map((t,i)=>`<div class="seg" style="left:${(t.offset/m.tensors[0].block_stride*100).toFixed(1)}%;width:${Math.max(1.5,( (t.block_stride? ( (m.tensors[i+1]?m.tensors[i+1].offset:m.tensors[0].block_stride)-t.offset )/m.tensors[0].block_stride*100 : 0))).toFixed(1)}%" title="${esc(t.shared_by[0])} @ ${t.offset}B"></div>`).join('')}</div>
+      <div class="cap">各色竖条 = 一个层在 slab 内的字节区间（offset → offset+page）。层可在不同 block 复用同一偏移。</div>
+    </div>` : '';
+  const kpis = `
+    <div class="kpi"><div class="v">${m.num_blocks.toLocaleString()}</div><div class="l">num_blocks</div></div>
+    <div class="kpi"><div class="v">${m.num_tensors}</div><div class="l">KV 张量数</div></div>
+    <div class="kpi"><div class="v">${m.groups.length}</div><div class="l">kv_cache_group</div></div>
+    <div class="kpi"><div class="v">${fmtBytes(m.available_memory_bytes)}</div><div class="l">KV 显存</div></div>`;
+  return `<div class="mcfg">
+    <div class="top"><span class="name">${esc(m.label)}</span>
+      <span class="mtag ${tagCls}">${tagTxt}</span></div>
+    <div class="kpis">${kpis}</div>
+    <div class="note" style="font-size:12px;color:var(--muted)">${esc(m.note)}</div>
+    <h5>KV Cache Groups</h5>
+    <div class="grow">${groupsHtml}</div>
+    ${packedHtml}
+  </div>`;
+}
+
+function renderDia(kind, data, step){
+  switch(kind){
+    case 'stride_order': return `<div class="dia">
+      <p style="font-size:12.5px;color:#c3cee0;margin-bottom:8px">逻辑形状 <code>(B, H, N, C)</code>：
+        B=块数，H=K/V head 数，N=block_size，C=2·head_size（K‖V）。</p>
+      <div class="dimrow"><span class="dim">B</span><span class="arrow">·</span>
+        <span class="dim"><b>H</b></span><span class="arrow">·</span>
+        <span class="dim">N</span><span class="arrow">·</span>
+        <span class="dim">C=<b>2D</b></span></div>
+      <div class="cap">物理内存按『哪个维最慢变化』决定：num-blocks-first = B 在最外层（最慢），
+        一个块一个块连续排布。</div></div>`;
+    case 'stride_variants': return `<div class="dia">
+      <table class="tbl">
+        <thead><tr><th>布局</th><th>物理排列</th><th>stride_order（从逻辑 (B,H,N,2D)）</th></tr></thead>
+        <tbody>
+          <tr><td>NHD（最常见）</td><td><code>(B, N, H, 2D)</code></td><td><code>(0,2,1,3)</code></td></tr>
+          <tr><td>NHD + 层维</td><td><code>(B, L, N, H, 2D)</code></td><td><code>(1,0,3,2,4)</code></td></tr>
+          <tr><td>HND</td><td><code>(B, H, N, 2D)</code></td><td><code>(0,1,2,3)</code></td></tr>
+          <tr><td>HND + 层维</td><td><code>(B, H, L, N, 2D)</code></td><td><code>(1,2,0,3,4)</code></td></tr>
+          <tr><td>ROCM kv-first</td><td><code>(2, B, N, H, D)</code>（K/V 分居两块）</td><td>block_dim=1</td></tr>
+        </tbody>
+      </table>
+      <div class="cap">L=层维（打包进跨越的多层共享张量时）；ROCM 的 kv-first 把 K 与 V 放在两个远离的块半区。</div></div>`;
+    case 'shared_pool': return `<div class="dia">
+      <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">多组共享池：<code>group_size</code> 个物理池，每组第 j 层共享第 j 个池。</p>
+      <table class="tbl"><thead><tr><th>池</th><th>共享层</th></tr></thead><tbody>
+        <tr><td>池 0</td><td>full.0 / sw.0 / sw.1</td></tr>
+        <tr><td>池 1</td><td>full.1 / sw.2</td></tr>
+      </tbody></table>
+      <div class="cap">每个池大小 = <code>page_size × num_blocks</code>，块 id 跨组重叠（同一块分属不同组的一层）。</div></div>`;
+    case 'packed': return `<div class="dia">
+      <p style="font-size:12px;color:#c3cee0;margin-bottom:6px">packed：所有组叠进同一 slab，每层在块内有字节 <code>offset</code>，块步长 <code>block_stride</code>。</p>
+      <div class="slab" style="height:40px"><div class="seg" style="left:0;width:25%"></div><div class="seg" style="left:30%;width:18%"></div><div class="seg" style="left:55%;width:30%"></div><div class="seg" style="left:90%;width:8%"></div></div>
+      <div class="cap">块 b 的物理地址 = base + b·block_stride + layer_offset。层页大小不同也能共存。</div></div>`;
+    case 'swa': return `<div class="dia">
+      <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">滑窗：<span class="wtok out">×</span> 窗口外（null 块，已释放）· <span class="wtok in">t</span> 窗口内 · <span class="wtok cur">▸</span> 当前 token</p>
+      <div class="winrow">${'<span class="wtok out">'+(step%2?'×':'×')+'</span>'.repeat(6)}<span class="wtok in">t</span><span class="wtok in">t</span><span class="wtok cur">▸</span></div>
+      <div class="cap">窗口固定保留最近 N 个 token 的 KV；更早的块从 BlockTable 中换成 null 块并归还块池。</div></div>`;
+    case 'mla': return `<div class="dia">
+      <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">MLA 每 token 缓存 = 压缩潜在 <code>kv_lora</code>(512) + RoPE <code>k_rope</code>(64)，num_kv_heads=1。</p>
+      <div class="dimrow"><span class="dim">kv_lora <b>512</b></span><span class="dim">k_rope <b>64</b></span></div>
+      <div class="cap">head_size=576；fp8_ds_mla 下每 token 656B（V3）或 584B（V4，含 8B fp8 scale）。</div></div>`;
+    case 'mamba': return `<div class="dia">
+      <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">Mamba 每块存一段状态（conv + ssm），非 token 化 KV。</p>
+      <div class="dimrow"><span class="dim">[B, <b>1</b>, <b>1</b>, page_bytes]</span><span class="arrow">=</span><span class="dim">每块一个状态页</span></div>
+      <div class="cap">align 模式让 Mamba 状态块与注意力块边界对齐，块 table 行按序列位置索引。</div></div>`;
+    case 'hybrid_groups': return `<div class="dia">
+      <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">一组 BlockPool、多组 block table：</p>
+      <div class="chaintable">
+        <div class="chainrow"><span class="k">group0</span><span class="v hl">Mamba</span><span class="v">block table 0</span></div>
+        <div class="chainrow"><span class="k">group1</span><span class="v hl">FullAttn</span><span class="v">block table 1</span></div>
+        <div class="chainrow"><span class="k">pool</span><span class="v">KVCacheBlock[0..N]（共享）</span></div>
+      </div>
+      <div class="cap">块 id 由 BlockPool 全局分配，但各组各自记录自己的块序列。</div></div>`;
+    case 'slot_chain': return `<div class="dia">
+      <div class="chaintable">
+        <div class="chainrow"><span class="k">pos</span><span class="v">序列第 p 个 token</span></div>
+        <div class="chainrow"><span class="k">÷block</span><span class="v hl">manager block idx</span><span class="conv">→ BlockPool → <span class="conv_var">manager block_id</span></span></div>
+        <div class="chainrow"><span class="k">×bpk</span><span class="v hl">kernel block id</span><span class="conv">= block_id·bpk + k</span></div>
+        <div class="chainrow"><span class="k">slot</span><span class="v hl">物理 slot</span><span class="conv">= kernel_id·kernel_bs + off</span></div>
+        <div class="chainrow"><span class="k">addr</span><span class="v">base + layer_offset + slot·stride</span></div>
+      </div>
+    </div>`;
+    default: return '';
+  }
+}
+
+function renderMapping(m){
+  const steps = m.steps;
+  const reqKeys = Object.keys(steps[0].requests);
+  let si = 0;
+  const wrap = document.createElement('div');
+  function tableHtml(){
+    const st = steps[si];
+    let h = `<tr><th>req</th><th>pos</th><th>mgr blk</th><th>kernel blk</th><th>slot</th></tr>`;
+    let rows='';
+    for(const rid of reqKeys){
+      for(const sm of st.requests[rid].slot_map){
+        const isNew = sm.slot>=0 && (si===0 || !(steps[si-1].requests[rid]||{}).slot_map || !(steps[si-1].requests[rid].slot_map[sm.pos]||{}).slot===sm.slot);
+        rows+=`<tr><td style="color:var(--gpu)">${esc(rid)}</td><td>${sm.pos}</td>
+          <td>${sm.manager_block_id}</td><td>${sm.kernel_block_id}</td>
+          <td class="slot">${sm.slot}</td></tr>`;
+      }
+    }
+    return `<table class="slottab">${h}${rows}</table>`;
+  }
+  function render(){
+    wrap.innerHTML = `<div class="mmap blk">
+      <div class="mctrl">
+        <button ${si<=0?'disabled':''} onclick="mmStep(-1)">‹ 上一步</button>
+        <button ${si>=steps.length-1?'disabled':''} onclick="mmStep(1)">下一步 ›</button>
+        <span style="font-size:12px;color:var(--muted)">调度步 <b>${si}</b>/${steps.length-1}
+          · block_size=${m.block_size} · kernel_block_size=${m.kernel_block_size} · bpk=${m.bpk}</span>
+      </div>
+      ${tableHtml()}
+      <div class="cap">物理 slot 直接索引 num-blocks-first 张量的块维：slot = kernel_block_id·kernel_bs + offset。</div>
+    </div>`;
+  }
+  window.mmStep = function(d){ si=Math.max(0,Math.min(steps.length-1,si+d)); render(); };
+  render();
+  return wrap.innerHTML;
+}
+
+// ---------------- boot ----------------
+parseHash();
+render();
+document.addEventListener('keydown', e=>{
+  if(e.target && e.target.matches && e.target.matches('input,select,textarea')) return;
+  if(e.key==='ArrowRight') goSection(curSec+1);
+  else if(e.key==='ArrowLeft') goSection(curSec-1);
+});
+window.addEventListener('hashchange', ()=>{ parseHash(); render(); });
+</script>
+</body>
+</html>
