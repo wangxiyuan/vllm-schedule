@@ -74,13 +74,22 @@ def _make_vllm_config(block_size: int = 16) -> VllmConfig:
         is_encoder_decoder=False,
     )
     parallel_config = ParallelConfig()
-    return VllmConfig(
+    vllm_config = VllmConfig(
         model_config=model_config,
         cache_config=cache_config,
         scheduler_config=scheduler_config,
         parallel_config=parallel_config,
         device_config=DeviceConfig(device="cpu"),
     )
+    # We run on a CPU-only platform, where vLLM auto-disables the hybrid KV
+    # cache manager (the platform cannot run it). That would make genuine
+    # hybrid models (e.g. Jamba: Mamba + attention) raise in
+    # ``unify_hybrid_kv_cache_specs`` for a *demonstration* of the layout. The
+    # real planning path we want to show is the one with HMA enabled, so force
+    # it back on -- this only affects how the KV cache groups / tensors are
+    # planned, never the GPU runtime (we never touch a GPU).
+    vllm_config.scheduler_config.disable_hybrid_kv_cache_manager = False
+    return vllm_config
 
 
 def _spec_kind(spec: Any) -> str:
@@ -132,12 +141,30 @@ def _snapshot(
         vllm_config, groups, available_memory=available_memory
     )
     group_infos = [_group_info(g) for g in groups]
+
+    # Per-layer page size. For a UniformTypeKVCacheSpecs each layer has its own
+    # page size; otherwise all layers of the group share the spec's page size.
+    layer_page: dict[str, int] = {}
+    for g in groups:
+        spec = g.kv_cache_spec
+        if isinstance(spec, UniformTypeKVCacheSpecs):
+            for ln in g.layer_names:
+                layer_page[ln] = int(spec.kv_cache_specs[ln].page_size_bytes)
+        else:
+            for ln in g.layer_names:
+                layer_page[ln] = int(spec.page_size_bytes)
+
+    # In the packed layout, several layers (one per group) share the same
+    # byte_offset inside the block slab. The segment that starts at that offset
+    # must span the *largest* page size among the layers sharing it, so the
+    # front-end can draw non-overlapping-backed segments correctly.
     tensors = [
         {
             "size": t.size,
             "shared_by": list(t.shared_by),
             "offset": t.offset,
             "block_stride": t.block_stride,
+            "page_size": max(layer_page[n] for n in t.shared_by),
         }
         for t in kvcfg.kv_cache_tensors
     ]
@@ -263,8 +290,9 @@ def _build_jamba() -> tuple[VllmConfig, dict[str, Any], str]:
                 block_size=16, num_kv_heads=8, head_size=128, dtype=torch.float16
             )
     return vc, specs, (
-        "Hybrid：Mamba 层（存 conv/ssm 状态块）与 FullAttention 层交错，形成 2 个 "
-        "kv_cache_group，各自独立 block table，但共享同一 BlockPool。"
+        "Hybrid：Mamba 层（存 conv/ssm 状态块）与 FullAttention 层交错，按层下标模 4 "
+        "归为 4 个 kv_cache_group（1 个 Mamba 组 + 3 个注意力组），各自独立 block table，"
+        "但共享同一 BlockPool。"
     )
 
 
@@ -306,3 +334,33 @@ def build_model_snapshot(name: str, available_memory: int = AVAILABLE_MEM_BYTES)
 
 def build_all_snapshots() -> list[dict[str, Any]]:
     return [build_model_snapshot(name) for name in MODEL_BUILDERS]
+
+
+# Models and memory budgets used by the "实战对比" chapter's capacity-scaling
+# comparison. num_blocks grows linearly with the memory budget, but the slope
+# differs by model (inverse of per-token bytes), which is the practical takeaway.
+MEMORY_SERIES_MODELS = ("llama", "deepseek_v3", "jamba")
+MEMORY_SERIES_GIB = (2, 4, 8, 16)
+
+
+def build_memory_series(
+    names: tuple[str, ...] = MEMORY_SERIES_MODELS,
+    memories: tuple[int, ...] = MEMORY_SERIES_GIB,
+) -> dict[str, Any]:
+    """How many KV blocks each representative model fits at growing memory budgets.
+
+    Reuses the same real planning path as ``_snapshot`` (get_kv_cache_groups +
+    get_kv_cache_config_from_groups) so the numbers are faithful.
+    """
+    models: dict[str, Any] = {}
+    for name in names:
+        builder, label = MODEL_BUILDERS[name]
+        vc, specs, note = builder()
+        points = []
+        for mem in memories:
+            s = _snapshot(name, label, note, vc, specs, available_memory=mem * 1024**3)
+            points.append({"mem_gib": mem, "num_blocks": s["num_blocks"]})
+        # Representative per-token bytes: the largest group's per-token cost.
+        rep_per_token = max(g["per_token_bytes"] for g in s["groups"])
+        models[name] = {"label": label, "rep_per_token": rep_per_token, "points": points}
+    return {"mems": list(memories), "models": models}

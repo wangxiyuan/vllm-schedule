@@ -8,61 +8,109 @@
 <style>
 /* THEME: kv_layout.py injects the shared scheduler-theme CSS here. */
 __THEME_CSS__
-/* ================= lecture-specific styles ================= */
-.kvhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
-.kvhead h1{font-size:20px}
-.kvhead .sub{color:var(--muted);font-size:12.5px}
-.chapterbar{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
-.ctab{padding:7px 14px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:13px}
-.ctab:hover{background:var(--panel2);color:var(--txt)}
-.ctab.active{font-weight:700;color:var(--txt);border-color:var(--accent);background:rgba(79,143,247,.12)}
-.ctab .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-1px}
-nav.secbar{display:flex;align-items:center;gap:8px;margin:10px 0;flex-wrap:wrap}
-nav.secbar button{padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:12.5px}
-nav.secbar button:hover{background:var(--panel3)}
-nav.secbar button:disabled{opacity:.4;cursor:default}
-.secinfo{font-size:12px;color:var(--muted);margin-left:auto}
-.sec-pips{display:flex;gap:3px;margin:8px 0;flex-wrap:wrap;align-items:center}
-.spip{width:14px;height:14px;border-radius:4px;border:1px solid var(--line);background:var(--panel3);cursor:pointer;padding:0}
-.spip.active{outline:2px solid var(--accent2);outline-offset:1px}
-.spip.done{background:var(--ok)}
-.story{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:var(--radius);padding:12px 16px;margin:10px 0}
-.story h2{font-size:15px;margin-bottom:6px}
-.story .crumb{font-size:11px;color:var(--faint);margin-bottom:4px}
+/* ================= lecture page design =================
+   Structure: sticky top-bar + left outline sidebar + main content.
+   Reading flow: 导航大纲 → 本节学习目标 → 图文讲解 → 底部翻页。 */
+
+/* ---- layout shell ---- */
+.kv-shell{display:flex;gap:18px;align-items:flex-start;margin-top:14px}
+.kv-main{flex:1;min-width:0}
+
+/* ---- top bar ---- */
+.topbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:12px;
+  background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);padding:10px 4px;margin:-18px -18px 0;padding-left:18px;padding-right:18px;flex-wrap:wrap}
+.topbar .brand{display:flex;flex-direction:column;min-width:0}
+.topbar h1{font-size:16.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .sub{font-size:10.5px;color:var(--faint);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .crumb{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap}
+.topbar .crumb b{color:var(--txt);font-weight:600}
+.topbar .crumb .tick{color:var(--faint)}
+.progress{flex:1;min-width:120px;max-width:260px;margin-left:auto}
+.progress .ptrack{height:6px;border-radius:5px;background:var(--panel3);overflow:hidden;border:1px solid var(--line)}
+.progress .pfill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:5px;transition:width .3s ease}
+.progress .plab{font-size:10px;color:var(--faint);margin-top:3px;font-variant-numeric:tabular-nums}
+.menu-btn{display:none;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:13px}
+
+/* ---- outline sidebar ---- */
+.outline{width:264px;flex-shrink:0;position:sticky;top:64px;max-height:calc(100vh - 80px);overflow-y:auto;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);display:flex;flex-direction:column}
+.outline .ol-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:11px;color:var(--faint);letter-spacing:.05em;font-weight:600}
+.outline .ol-head .olsteps{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.oltree{padding:6px;display:flex;flex-direction:column;gap:2px}
+.olch{border-radius:8px}
+.olch-row{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 9px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:12.5px;border:none;background:none}
+.olch-row:hover{background:var(--panel2);color:var(--txt)}
+.olch.open .olch-row{color:var(--txt);font-weight:600}
+.olch-row .cdot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.olch-row .ctitle{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.olch-row .ccaret{margin-left:auto;color:var(--faint);font-size:10px;transition:transform .15s ease}
+.olch.open .olch-row .ccaret{transform:rotate(90deg)}
+.olsecs{margin:0 0 4px 22px;padding-left:8px;border-left:1px solid var(--line2);display:none;flex-direction:column;gap:1px}
+.olch.open .olsecs{display:flex}
+.olsec{display:flex;align-items:center;gap:7px;width:100%;text-align:left;padding:5px 8px;border-radius:7px;cursor:pointer;color:var(--muted);font-size:11.5px;border:none;background:none;line-height:1.35}
+.olsec:hover{background:var(--panel2);color:var(--txt)}
+.olsec .num{color:var(--faint);font-variant-numeric:tabular-nums;font-size:10.5px;min-width:16px}
+.olsec.active{background:rgba(79,143,247,.14);color:var(--txt);font-weight:600}
+.olsec.active .num{color:var(--accent2)}
+.olsec.done .num{color:var(--ok)}
+.olsec.done::after{content:"✓";color:var(--ok);margin-left:auto;font-size:10px}
+.olsec .stitle{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- story (teaching card) ---- */
+.story{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
+.story .shead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel))}
+.story .shead .ch{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:12px;color:#fff;letter-spacing:.04em;white-space:nowrap}
+.story .shead .secnum{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.story .shead h2{font-size:16.5px;flex:1;min-width:0;line-height:1.3}
+.story .goal{display:flex;gap:10px;padding:10px 16px;background:rgba(79,143,247,.06);border-top:1px solid rgba(79,143,247,.15)}
+.story .goal .glabel{flex-shrink:0;font-size:10.5px;font-weight:700;color:var(--accent2);padding-top:2px;letter-spacing:.05em}
+.story .goal .gtext{font-size:12.5px;color:#c3cee0;line-height:1.6}
+.story .goal b{color:var(--txt)}
+.story .goal code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+
+/* ---- body blocks ---- */
 .body{display:flex;flex-direction:column;gap:14px}
-.blk{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.blk{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;
+  /* The shared scheduler theme defines .blk as a 24x24 KV-block square
+     (display:flex;width:24px;height:24px;font-size:9px;color:#fff). Neutralise
+     those leaked properties so .blk here is a full-width content card. */
+  display:block;width:auto;height:auto;font-size:13px;font-weight:400;color:inherit;
+  position:static;align-items:initial;justify-content:initial;text-align:left}
 .blk code,.story code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
-.blk p{color:#c3cee0;font-size:13px;line-height:1.7;margin:0}
+.blk p{color:#c3cee0;font-size:13px;line-height:1.75;margin:0}
+.blk p + p{margin-top:10px}
 .blk b{color:var(--txt)}
+.blk h5{font-size:12px;color:var(--accent2);margin:14px 0 8px;font-weight:600;letter-spacing:.02em}
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
-.tbl th,.tbl td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+.tbl th,.tbl td{border:1px solid var(--line);padding:7px 10px;text-align:left}
 .tbl th{background:var(--panel2);color:var(--txt);font-weight:600}
 .tbl td{color:#c3cee0}
 .tbl td b{color:var(--txt)}
-.coderef{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted)}
+.coderef{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
 .coderef .f{font-family:ui-monospace,monospace;color:var(--accent2)}
 .coderef .ln{font-family:ui-monospace,monospace;color:var(--warn)}
 .coderef .lab{color:var(--txt)}
-.callout{border:1px solid var(--warn);border-left:4px solid var(--warn);background:rgba(255,197,61,.07);border-radius:var(--radius);padding:10px 14px;font-size:12.5px;color:#d8c9a0;line-height:1.6}
+.coderef .src{font-size:10px;color:var(--faint);margin-left:auto}
+.callout{border:1px solid rgba(255,197,61,.4);border-left:4px solid var(--warn);background:rgba(255,197,61,.07);border-radius:var(--radius);padding:11px 15px;font-size:12.5px;color:#d8c9a0;line-height:1.65}
 .callout b{color:#ffe1a0}
 
-/* model config card */
-.mcfg{display:flex;flex-direction:column;gap:10px}
+/* ---- model config card ---- */
+.mcfg{display:flex;flex-direction:column;gap:12px}
 .mcfg .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.mcfg .name{font-weight:700;font-size:14px}
-.mtag{font-size:10px;padding:2px 8px;border-radius:8px;font-weight:700;border:1px solid}
+.mcfg .name{font-weight:700;font-size:15px;color:var(--txt)}
+.mtag{font-size:10px;padding:2px 8px;border-radius:8px;font-weight:700;border:1px solid;white-space:nowrap}
 .mtag.nbf{background:rgba(79,143,247,.15);color:var(--cpu);border-color:var(--cpu)}
 .mtag.packed{background:rgba(255,197,61,.15);color:var(--warn);border-color:var(--warn)}
 .mtag.uniform{background:rgba(176,124,247,.15);color:var(--gpu);border-color:var(--gpu)}
 .mtag.big{background:rgba(53,208,127,.15);color:var(--ok);border-color:var(--ok)}
-.mcfg .kpis{display:flex;gap:10px;flex-wrap:wrap}
-.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:110px}
-.kpi .v{font-size:18px;font-weight:700;color:var(--accent2);font-variant-numeric:tabular-nums}
+.mcfg .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 12px}
+.kpi .v{font-size:17px;font-weight:700;color:var(--accent2);font-variant-numeric:tabular-nums}
 .kpi .l{font-size:10.5px;color:var(--faint);margin-top:2px}
-.mcfg h5{font-size:12px;color:var(--accent2);margin:6px 0 6px;font-weight:600}
-.grow{display:flex;flex-direction:column;gap:6px}
-.gcard{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel2)}
-.gcard .ghead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.grow{display:flex;flex-direction:column;gap:7px}
+.gcard{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:var(--panel2)}
+.gcard .ghead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
 .gcard .gkind{font-size:10.5px;font-weight:700;color:var(--cpu)}
 .gcard .gmeta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .glayer{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:6px;background:var(--panel3);border:1px solid var(--line);margin:1px;color:#c3cee0}
@@ -70,19 +118,18 @@ nav.secbar button:disabled{opacity:.4;cursor:default}
 .trow{font-size:11px;color:var(--muted);font-family:ui-monospace,monospace}
 .trow b{color:var(--txt)}
 .slab{position:relative;border:1px solid var(--line2);border-radius:6px;overflow:hidden;margin-top:6px}
-.ssoil{height:34px;background:
-  repeating-linear-gradient(90deg,
-    rgba(79,143,247,.18) 0, rgba(79,143,247,.18) 46px, transparent 46px, transparent 52px)}
-.slab .seg{position:absolute;top:0;bottom:0;border-right:1px solid var(--line);background:rgba(79,143,247,.28)}
+.slab .seg{position:absolute;top:0;bottom:0;border-right:1px solid var(--line);background:linear-gradient(180deg,rgba(79,143,247,.34),rgba(79,143,247,.2))}
+.slab .seg:nth-child(even){background:linear-gradient(180deg,rgba(176,124,247,.34),rgba(176,124,247,.2))}
+.slab .seg:nth-child(3n){background:linear-gradient(180deg,rgba(53,208,127,.3),rgba(53,208,127,.16))}
 
-/* diagrams */
-.dia{background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:14px;overflow-x:auto}
-.dia .cap{font-size:11px;color:var(--faint);margin-top:8px;line-height:1.6}
+/* ---- diagrams ---- */
+.dia{background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:16px;overflow-x:auto}
+.dia .cap{font-size:11px;color:var(--faint);margin-top:9px;line-height:1.6}
 .dimrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px}
-.dim{font-family:ui-monospace,monospace;padding:4px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel3);color:#c3cee0}
+.dim{font-family:ui-monospace,monospace;padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel3);color:#c3cee0}
 .dim b{color:var(--accent2)}
 .arrow{color:var(--faint);font-size:16px}
-.chaintable{display:flex;flex-direction:column;gap:4px;font-size:11.5px}
+.chaintable{display:flex;flex-direction:column;gap:5px;font-size:11.5px}
 .chainrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:ui-monospace,monospace}
 .chainrow .k{width:64px;color:var(--faint)}
 .chainrow .v{color:var(--txt)}
@@ -90,115 +137,222 @@ nav.secbar button:disabled{opacity:.4;cursor:default}
 .conv{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:11.5px}
 .conv_var{display:inline-block;padding:2px 6px;border-radius:6px;border:1px solid var(--line);background:var(--panel3);font-family:ui-monospace,monospace;font-size:11px;color:var(--accent2)}
 .bar{display:block;background:#0a0e16;border-radius:4px;height:14px;position:relative;overflow:hidden;font-size:9.5px}
-.bar .fill{position:absolute;left:0;top:0;bottom:0;background:var(--cpu)}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--cpu),var(--accent2))}
 .winrow{display:flex;gap:2px;align-items:center;font-size:10px;flex-wrap:wrap}
-.wtok{width:26px;height:26px;border-radius:4px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px}
+.wtok{width:28px;height:28px;border-radius:5px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px}
 .wtok.out{background:linear-gradient(135deg,#3a1220,#2a0c16);border-color:#6b2a3a;color:var(--null)}
 .wtok.in{background:var(--panel3);color:#c3cee0}
-.wtok.cur{background:var(--ok)}
+.wtok.cur{background:linear-gradient(135deg,var(--ok),#1f8f5a);color:#fff}
 
-/* mapping interactive */
-.mmap .mctrl{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
-.mmap .mctrl button{padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:12px}
-.mmap .mctrl button:disabled{opacity:.4}
+/* ---- model comparison table ---- */
+.cmpbox{overflow-x:auto}
+table.cmp{width:100%;border-collapse:collapse;font-size:12px;min-width:760px}
+.cmp th,.cmp td{border:1px solid var(--line);padding:9px 11px;vertical-align:top;text-align:left}
+.cmp thead th{background:var(--panel2);color:var(--txt);font-weight:600;font-size:11.5px;white-space:nowrap;position:sticky;top:0}
+.cmp td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--accent2);font-weight:600}
+.cmp .c-model .c-name{font-weight:700;color:var(--txt);font-size:12.5px}
+.cmp .c-model .c-groups{margin-top:5px;display:flex;gap:4px;flex-wrap:wrap}
+.cmp .gtag{font-size:9.5px;padding:1px 6px;border-radius:6px;background:var(--panel3);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.cmp .c-note{color:#aab6cc;font-size:11.5px;line-height:1.6;min-width:220px}
+.cmp .c-note b{color:var(--txt)}
+.cmp .c-bar .mbar{width:120px;height:10px;background:#0a0e16;border-radius:5px;overflow:hidden;border:1px solid var(--line)}
+.cmp .c-bar .mbar .fill{height:100%;background:linear-gradient(90deg,var(--cpu),var(--warn))}
+.cmp .c-bar .mval{font-size:10.5px;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cmp tr:hover td{background:rgba(79,143,247,.04)}
+
+/* ---- mapping demo ---- */
+.mmap .mctrl{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.mmap .mctrl button{padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:12px}
+.mmap .mctrl button:hover{background:var(--panel3)}
+.mmap .mctrl button:disabled{opacity:.4;cursor:default}
+.mmap .mstep{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.mmap .mstep b{color:var(--txt)}
+.mchain{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.mchain .creq{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel2)}
+.mchain .creq .chead{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:8px;flex-wrap:wrap}
+.mchain .creq .chead b{color:var(--txt)}
+.mchain .ctoks{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:8px}
+.mchain .ctok{width:24px;height:24px;border-radius:5px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);background:var(--panel3);font-variant-numeric:tabular-nums}
+.mchain .ctok.new{background:rgba(255,197,61,.18);border-color:var(--warn);color:#ffe1a0;font-weight:700}
+.mchain .ctok.cur{background:var(--ok);color:#fff;font-weight:700}
+.mchain .cpath{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px}
+.mchain .pn{display:flex;align-items:center;gap:5px;padding:5px 9px;border-radius:7px;border:1px solid var(--line);background:var(--panel3);font-family:ui-monospace,monospace;color:#c3cee0}
+.mchain .pn b{color:var(--txt)}
+.mchain .pn.slot{background:rgba(255,197,61,.14);border-color:var(--warn)}
+.mchain .pn.slot b{color:var(--warn)}
+.mchain .pconn{color:var(--faint);font-size:12px}
 .slottab{width:100%;border-collapse:collapse;font-size:11.5px}
-.slottab th,.slottab td{border:1px solid var(--line);padding:4px 7px;text-align:center;font-family:ui-monospace,monospace}
+.slottab th,.slottab td{border:1px solid var(--line);padding:5px 8px;text-align:center;font-family:ui-monospace,monospace}
 .slottab th{background:var(--panel2);color:var(--muted);font-size:10.5px}
 .slottab td.slot{color:var(--warn);font-weight:700}
 .slottab td.hl{background:rgba(255,197,61,.12)}
 
-@media (max-width:760px){.worlds{grid-template-columns:1fr}}
+/* ---- pager ---- */
+.pager{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+.pager .pbtn{flex:1;min-width:150px;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);cursor:pointer;color:var(--muted);transition:border-color .15s ease,background .15s ease}
+.pager .pbtn:hover{background:var(--panel2);border-color:var(--accent)}
+.pager .pbtn:disabled{opacity:.35;cursor:default}
+.pager .pbtn .dir{font-size:10px;color:var(--faint);letter-spacing:.06em}
+.pager .pbtn .pt{font-size:12.5px;color:var(--txt);font-weight:600;margin-top:2px;line-height:1.3}
+.pager .pbtn[data-side="next"]{text-align:right}
+.pager .psep{color:var(--faint);font-size:11px;white-space:nowrap}
+
+/* ---- responsive ---- */
+@media (max-width:920px){
+  .outline{position:fixed;left:0;top:0;bottom:0;z-index:70;width:280px;max-height:none;border-radius:0;transform:translateX(-105%);transition:transform .2s ease;box-shadow:0 0 40px rgba(0,0,0,.5)}
+  .outline.open{transform:translateX(0)}
+  .menu-btn{display:inline-flex}
+  .kv-shell{display:block}
+  .topbar .brand .sub{display:none}
+}
+@media (max-width:560px){
+  .kpis{grid-template-columns:1fr 1fr}
+  .cmp td.c-note{min-width:0}
+}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
-<header class="kvhead">
-  <h1>vLLM KV Cache 排布与逻辑↔物理映射</h1>
-  <span class="sub">不同模型结构的缓存差异 · L/B/H/N/C 维度排布 · 逻辑 slot → 物理地址</span>
-</header>
+<a class="skip" href="#main">跳到主要内容</a>
 
-<div class="chapterbar" id="chapterbar"></div>
+<div class="topbar">
+  <button class="menu-btn" id="menuBtn" aria-label="打开目录" aria-expanded="false">☰ 目录</button>
+  <div class="brand">
+    <h1>vLLM KV Cache 排布与逻辑↔物理映射</h1>
+    <span class="sub">不同模型结构的缓存差异 · L/B/H/N/C 维度排布 · 逻辑 slot → 物理地址</span>
+  </div>
+  <div class="crumb" id="crumb">
+    <span id="crumbCh">—</span><span class="tick">/</span><span id="crumbSec">—</span>
+  </div>
+  <div class="progress">
+    <div class="ptrack"><div class="pfill" id="pfill"></div></div>
+    <div class="plab" id="plab">—</div>
+  </div>
+</div>
 
-<nav class="secbar" id="secbar"></nav>
-<div class="sec-pips" id="secpips"></div>
+<div class="kv-shell">
+  <aside class="outline" id="outline" aria-label="章节目录">
+    <div class="ol-head">教学内容 <span class="olsteps" id="olsteps"></span></div>
+    <div class="oltree" id="oltree"></div>
+  </aside>
 
-<section class="story" id="story"></section>
-<div class="body" id="body"></div>
+  <main class="kv-main" id="main">
+    <section class="story" id="story" aria-live="polite"></section>
+    <div class="body" id="body"></div>
+    <nav class="pager" id="pager" aria-label="章节翻页"></nav>
+  </main>
+</div>
 
 <script>
 const PAGE = __PAGE_DATA__;
 let curCh = 0, curSec = 0;
+const visited = new Set();   // "ch/idx" of sections already opened
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function md(s){ return esc(s).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>'); }
 function fmtBytes(n){ if(n>=1e9) return (n/1e9).toFixed(1)+' GB'; if(n>=1e6) return (n/1e6).toFixed(1)+' MB'; if(n>=1e3) return (n/1e3).toFixed(1)+' KB'; return n+' B'; }
 
-function activeChapter(){ return PAGE.chapters[curCh]; }
-function activeSection(){ return activeChapter().sections[curSec]; }
+const activeChapter = () => PAGE.chapters[curCh];
+const activeSection  = () => activeChapter().sections[curSec];
+const totalSecs = () => PAGE.chapters.reduce((a,c)=>a+c.sections.length,0);
+const visitedCount = () => visited.size;
 
-function renderChapters(){
-  const el = document.getElementById('chapterbar');
-  el.innerHTML = PAGE.chapters.map((c,i)=>
-    `<button class="ctab ${i===curCh?'active':''}" onclick="goChapter(${i})">
-      <span class="dot" style="background:${c.color}"></span>${esc(c.title)}</button>`).join('');
+function currentHash(){ return activeChapter().id+'/'+curSec; }
+
+/* ---------- renderers ---------- */
+function renderTopbar(){
+  const ch=activeChapter(), s=activeSection();
+  document.getElementById('crumbCh').innerHTML = `<b style="color:${ch.color}">${esc(ch.title)}</b>`;
+  document.getElementById('crumbSec').textContent = `第 ${curSec+1}/${ch.sections.length} 节`;
+  const done = visitedCount(), total = totalSecs();
+  document.getElementById('pfill').style.width = (done/total*100).toFixed(1)+'%';
+  document.getElementById('plab').textContent = `已读 ${done}/${total} 节`;
 }
-function renderPips(){
-  const secs = activeChapter().sections;
-  const el = document.getElementById('secpips');
-  el.innerHTML = secs.map((s,i)=>
-    `<button class="spip ${i===curSec?'active':''} ${i<curSec?'done':''}" title="${esc(s.title)}"
-       aria-label="第 ${i+1} 节：${esc(s.title)}" onclick="goSection(${i})"></button>`).join('');
-}
-function renderSecbar(){
-  const ch = activeChapter();
-  const el = document.getElementById('secbar');
-  const ci = PAGE.chapters.indexOf(ch);
-  el.innerHTML = `
-    <button ${curSec<=0?'disabled':''} onclick="goSection(${curSec-1})">‹ 上一节</button>
-    <button ${curSec>=ch.sections.length-1?'disabled':''} onclick="goSection(${curSec+1})">下一节 ›</button>
-    <button onclick="goChapter(${ci-1})" ${ci<=0?'disabled':''}>‹ 上一章</button>
-    <button onclick="goChapter(${ci+1})" ${ci>=PAGE.chapters.length-1?'disabled':''}>下一章 ›</button>
-    <span class="secinfo tnum">${ch.title} · 第 ${curSec+1}/${ch.sections.length} 节</span>`;
+function renderOutline(){
+  const t = document.getElementById('oltree');
+  t.innerHTML = PAGE.chapters.map((c,ci)=>{
+    const open = ci<=curCh;   // keep current chapter and earlier ones open
+    const secs = c.sections.map((s,si)=>{
+      const key = ci+'/'+si; const isCur = ci===curCh&&si===curSec; const isDone = visited.has(key);
+      return `<button class="olsec ${isCur?'active':''} ${isDone?'done':''}"
+        onclick="goSectionTo(${ci},${si})" aria-current="${isCur?'page':'false'}">
+        <span class="num">${si+1}</span><span class="stitle">${esc(s.title)}</span></button>`;
+    }).join('');
+    return `<div class="olch ${open?'open':''}">
+      <button class="olch-row" onclick="toggleCh(${ci})" aria-expanded="${open}">
+        <span class="cdot" style="background:${c.color}"></span>
+        <span class="ctitle">${esc(c.title)}</span>
+        <span class="ccaret">›</span>
+      </button>
+      <div class="olsecs">${secs}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('olsteps').textContent = `${PAGE.chapters.length} 章 · ${totalSecs()} 节`;
 }
 function renderStory(){
-  const ch = activeChapter(), s = activeSection();
-  document.getElementById('story').innerHTML =
-    `<div class="crumb">${esc(ch.title)} · 小计 ${curSec+1}/${ch.sections.length}</div>
-     <h2>${esc(s.title)}</h2>`;
+  const ch=activeChapter(), s=activeSection();
+  const goal = s.goal ? `<div class="goal"><span class="glabel">本节目标</span><span class="gtext">${md(s.goal)}</span></div>` : '';
+  document.getElementById('story').innerHTML = `
+    <div class="shead">
+      <span class="ch" style="background:${ch.color}">${esc(ch.title)}</span>
+      <span class="secnum">${curSec+1}/${ch.sections.length}</span>
+      <h2>${esc(s.title)}</h2>
+    </div>${goal}`;
 }
-function renderBody(){
-  const s = activeSection();
-  document.getElementById('body').innerHTML = s.body.map(renderBlock).join('');
+function renderPager(){
+  const ch=activeChapter(); const n=ch.sections.length;
+  const prevSec = curSec>0 ? {c:curCh,i:curSec-1,t:ch.sections[curSec-1].title} : (curCh>0?{c:curCh-1,i:PAGE.chapters[curCh-1].sections.length-1,t:PAGE.chapters[curCh-1].sections[PAGE.chapters[curCh-1].sections.length-1].title}:null);
+  const nextSec = curSec<n-1 ? {c:curCh,i:curSec+1,t:ch.sections[curSec+1].title} : (curCh<PAGE.chapters.length-1?{c:curCh+1,i:0,t:PAGE.chapters[curCh+1].sections[0].title}:null);
+  document.getElementById('pager').innerHTML = `
+    <button class="pbtn" data-side="prev" ${prevSec?'':'disabled'} onclick="goSectionTo(${prevSec?prevSec.c:-1},${prevSec?prevSec.i:0})">
+      <div class="dir">‹ 上一节</div><div class="pt">${prevSec?esc(prevSec.t):'已到开头'}</div></button>
+    <span class="psep">进度 ${curSec+1}/${n}</span>
+    <button class="pbtn" data-side="next" ${nextSec?'':'disabled'} onclick="goSectionTo(${nextSec?nextSec.c:-1},${nextSec?nextSec.i:0})">
+      <div class="dir">下一节 ›</div><div class="pt">${nextSec?esc(nextSec.t):'已是最后'}</div></button>`;
 }
-function render(){
-  renderChapters(); renderPips(); renderSecbar(); renderStory(); renderBody();
-  const st=document.getElementById('story'); if(st) st.scrollIntoView({block:'nearest'});
+function renderBody(){ document.getElementById('body').innerHTML = activeSection().body.map(renderBlock).join(''); }
+function render(){ renderTopbar(); renderOutline(); renderStory(); renderBody(); renderPager(); }
+
+/* ---------- navigation ---------- */
+function goSectionTo(ci,si){
+  if(ci<0||ci>=PAGE.chapters.length) return;
+  const n=PAGE.chapters[ci].sections.length;
+  if(si<0||si>=n) return;
+  curCh=ci; curSec=si; visited.add(ci+'/'+si);
+  render(); syncHash(); closeOutline();
+  const story=document.getElementById('story'); if(story) story.scrollIntoView({block:'start',behavior:reduced?'auto':'smooth'});
 }
-function goChapter(i){ if(i<0||i>=PAGE.chapters.length) return; curCh=i; curSec=0; render(); syncHash(); }
-function goSection(i){ const n=activeChapter().sections.length; curSec=Math.max(0,Math.min(n-1,i)); render(); syncHash(); }
-function syncHash(){ try{ history.replaceState(null,'','#'+activeChapter().id+'/'+curSec); }catch(e){} }
+function goChapter(i){ if(i>=0&&i<PAGE.chapters.length){ curCh=i; curSec=0; visited.add(i+'/0'); render(); syncHash(); } }
+function toggleCh(ci){
+  const el=document.querySelectorAll('.olch')[ci]; el.classList.toggle('open');
+  const btn=el.querySelector('.olch-row'); btn.setAttribute('aria-expanded', el.classList.contains('open'));
+}
+function syncHash(){ try{ history.replaceState(null,'','#'+currentHash()); }catch(e){} }
 function parseHash(){
   const h=location.hash.replace(/^#/,''); if(!h) return;
   const [cid,si]=h.split('/');
   const ci=PAGE.chapters.findIndex(c=>c.id===cid);
-  if(ci>=0){ curCh=ci; if(si!=null) curSec=+si||0; }
+  if(ci>=0){ curCh=ci; curSec=(si!=null)?(+si||0):0; visited.add(ci+'/'+curSec); }
 }
+function closeOutline(){ document.getElementById('outline').classList.remove('open'); document.getElementById('menuBtn').setAttribute('aria-expanded','false'); }
+function openMenu(){ document.getElementById('outline').classList.add('open'); document.getElementById('menuBtn').setAttribute('aria-expanded','true'); }
 
-// ---------------- block renderers ----------------
+/* ---------- block renderers ---------- */
 function renderBlock(b){
   switch(b.t){
     case 'p': return `<div class="blk"><p>${md(b.md)}</p></div>`;
     case 'callout': return `<div class="callout">${md(b.md)}</div>`;
     case 'code': return `<div class="blk"><span class="coderef">
         <span class="f">${esc(b.file)}</span><span class="ln">:${b.line}</span>
-        ${b.label?`<span class="lab">· ${esc(b.label)}</span>`:''}</span></div>`;
+        ${b.label?`<span class="lab">· ${esc(b.label)}</span>`:''}<span class="src">源码参考</span></span></div>`;
     case 'table': return `<div class="blk"><table class="tbl">
         <thead><tr>${b.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
         <tbody>${b.rows.map(r=>`<tr>${r.map(c=>`<td>${md(String(c))}</td>`).join('')}</tr>`).join('')}</tbody>
         </table></div>`;
     case 'kvcfg': return renderKvcfg(PAGE.data.models[b.model]);
-    case 'kvcfg_compare': return `<div class="blk">${b.models.map(m=>renderKvcfg(PAGE.data.models[m],true)).join('<hr style="border-color:var(--line)">')}</div>`;
+    case 'kvcfg_compare': return renderCompare(b.models);
+    case 'memseries': return renderMemSeries();
     case 'mapping': return renderMapping(PAGE.data.mapping);
     case 'dia': return renderDia(b.kind, b.data, curSec);
     default: return '';
@@ -220,8 +374,8 @@ function renderKvcfg(m, compact=false){
   }).join('');
   const packedHtml = m.layout==='packed' ? `<h5>物理张量计划（packed 单 slab）</h5>
     <div class="tplan"><div class="trow">block_stride = <b>${fmtBytes(m.tensors[0].block_stride)}</b> · 每个 block 内逐层偏移：</div>
-      <div class="slab" style="height:34px">${m.tensors.slice(0,16).map((t,i)=>`<div class="seg" style="left:${(t.offset/m.tensors[0].block_stride*100).toFixed(1)}%;width:${Math.max(1.5,( (t.block_stride? ( (m.tensors[i+1]?m.tensors[i+1].offset:m.tensors[0].block_stride)-t.offset )/m.tensors[0].block_stride*100 : 0))).toFixed(1)}%" title="${esc(t.shared_by[0])} @ ${t.offset}B"></div>`).join('')}</div>
-      <div class="cap">各色竖条 = 一个层在 slab 内的字节区间（offset → offset+page）。层可在不同 block 复用同一偏移。</div>
+      <div class="slab" style="height:34px">${m.tensors.slice(0,16).map((t,i)=>`<div class="seg" style="left:${(t.offset/m.tensors[0].block_stride*100).toFixed(1)}%;width:${Math.max(1.5,(t.page_size/m.tensors[0].block_stride*100)).toFixed(1)}%" title="${esc(t.shared_by[0])} @ ${t.offset}B，宽 ${fmtBytes(t.page_size)}"></div>`).join('')}</div>
+      <div class="cap">每个竖条 = 一个字节偏移处的层组（offset → offset+最宽层页）。不同组（不同颜色）的层可在同一偏移重叠：一个物理 block 同一时刻只属于一个组，故各组布局可复用同一块区间。</div>
     </div>` : '';
   const kpis = `
     <div class="kpi"><div class="v">${m.num_blocks.toLocaleString()}</div><div class="l">num_blocks</div></div>
@@ -232,11 +386,65 @@ function renderKvcfg(m, compact=false){
     <div class="top"><span class="name">${esc(m.label)}</span>
       <span class="mtag ${tagCls}">${tagTxt}</span></div>
     <div class="kpis">${kpis}</div>
-    <div class="note" style="font-size:12px;color:var(--muted)">${esc(m.note)}</div>
+    <div class="note" style="font-size:12px;color:var(--muted)">${md(m.note)}</div>
     <h5>KV Cache Groups</h5>
     <div class="grow">${groupsHtml}</div>
     ${packedHtml}
   </div>`;
+}
+
+function renderCompare(modelNames){
+  const ms = modelNames.map(n=>PAGE.data.models[n]);
+  const maxTok = Math.max(...ms.map(m=>Math.max(...m.groups.map(g=>g.per_token_bytes))));
+  const rows = ms.map(m=>{
+    const rep = Math.max(...m.groups.map(g=>g.per_token_bytes));
+    const pct = Math.max(3, Math.round(rep/maxTok*100));
+    const tagCls = m.layout==='packed'?'packed':(m.layout==='uniform_type'?'uniform':'nbf');
+    const tagTxt = m.layout==='packed'?'PACKED':(m.layout==='uniform_type'?'UNIFORM-TYPE':'NUM-BLOCKS-FIRST');
+    return `<tr>
+      <td class="c-model"><div class="c-name">${esc(m.label)}</div>
+        <div class="c-groups">${m.groups.map(g=>`<span class="gtag">${esc(g.kind)} ${g.num_layers}层</span>`).join('')}</div></td>
+      <td><span class="mtag ${tagCls}">${tagTxt}</span></td>
+      <td class="num">${m.num_blocks.toLocaleString()}</td>
+      <td class="num">${m.num_tensors}</td>
+      <td class="num">${m.groups.length}</td>
+      <td class="c-bar"><div class="mbar"><div class="fill" style="width:${pct}%"></div></div>
+        <div class="mval">峰值 ${rep.toLocaleString()} B/token</div></td>
+      <td class="c-note">${md(m.note)}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="blk"><div class="cmpbox"><table class="cmp">
+    <thead><tr><th>模型</th><th>布局</th><th>num_blocks</th><th>KV 张量</th><th>组数</th><th>每 token 字节</th><th>关键点</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div></div>`;
+}
+
+function renderMemSeries(){
+  const d = PAGE.data.memseries;
+  const mems = d.mems;
+  const maxBlocks = Math.max(...Object.values(d.models).map(m=>Math.max(...m.points.map(p=>p.num_blocks))));
+  const rows = Object.entries(d.models).map(([,m])=>{
+    const cells = mems.map(mem=>{
+      const pt = m.points.find(p=>p.mem_gib===mem);
+      return `<td class="num">${pt.num_blocks.toLocaleString()}</td>`;
+    }).join('');
+    const last = m.points[m.points.length-1];
+    const pct = Math.max(4, Math.round(last.num_blocks/maxBlocks*100));
+    return `<tr>
+      <td class="c-model"><div class="c-name">${esc(m.label)}</div></td>
+      <td class="num">${m.rep_per_token.toLocaleString()}</td>
+      ${cells}
+      <td class="c-bar"><div class="mbar"><div class="fill" style="width:${pct}%"></div></div>
+        <div class="mval">${last.mem_gib} GiB 时 ${last.num_blocks.toLocaleString()} 块</div></td>
+    </tr>`;
+  }).join('');
+  return `<div class="blk"><div class="memcmp">
+    <div class="memnote" style="font-size:12px;color:var(--muted);margin-bottom:10px">每个模型在同一组显存预算（${esc(mems.join(' / '))} GiB）下的 <code>num_blocks</code>。块容量随显存线性增长，斜率 ≈ 1 ÷ 每 token 字节。</div>
+    <div class="cmpbox"><table class="cmp">
+      <thead><tr><th>模型</th><th>每 token 峰值</th>${mems.map(m=>`<th>${m} GiB</th>`).join('')}<th>容量（16 GiB）</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div></div>`;
 }
 
 function renderDia(kind, data, step){
@@ -244,12 +452,11 @@ function renderDia(kind, data, step){
     case 'stride_order': return `<div class="dia">
       <p style="font-size:12.5px;color:#c3cee0;margin-bottom:8px">逻辑形状 <code>(B, H, N, C)</code>：
         B=块数，H=K/V head 数，N=block_size，C=2·head_size（K‖V）。</p>
-      <div class="dimrow"><span class="dim">B</span><span class="arrow">·</span>
-        <span class="dim"><b>H</b></span><span class="arrow">·</span>
+      <div class="dimrow"><span class="dim">B <b>(最慢)</b></span><span class="arrow">·</span>
+        <span class="dim">H</span><span class="arrow">·</span>
         <span class="dim">N</span><span class="arrow">·</span>
         <span class="dim">C=<b>2D</b></span></div>
-      <div class="cap">物理内存按『哪个维最慢变化』决定：num-blocks-first = B 在最外层（最慢），
-        一个块一个块连续排布。</div></div>`;
+      <div class="cap">物理内存按『哪个维最慢变化』决定：num-blocks-first = B 在最外层（最慢），一个块一个块连续排布。</div></div>`;
     case 'stride_variants': return `<div class="dia">
       <table class="tbl">
         <thead><tr><th>布局</th><th>物理排列</th><th>stride_order（从逻辑 (B,H,N,2D)）</th></tr></thead>
@@ -264,10 +471,10 @@ function renderDia(kind, data, step){
       <div class="cap">L=层维（打包进跨越的多层共享张量时）；ROCM 的 kv-first 把 K 与 V 放在两个远离的块半区。</div></div>`;
     case 'shared_pool': return `<div class="dia">
       <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">多组共享池：<code>group_size</code> 个物理池，每组第 j 层共享第 j 个池。</p>
-      <table class="tbl"><thead><tr><th>池</th><th>共享层</th></tr></thead><tbody>
-        <tr><td>池 0</td><td>full.0 / sw.0 / sw.1</td></tr>
-        <tr><td>池 1</td><td>full.1 / sw.2</td></tr>
-      </tbody></table>
+      <div class="chaintable">
+        <div class="chainrow"><span class="k">池 0</span><span class="v">full.0 / sw.0 / sw.1</span></div>
+        <div class="chainrow"><span class="k">池 1</span><span class="v">full.1 / sw.2</span></div>
+      </div>
       <div class="cap">每个池大小 = <code>page_size × num_blocks</code>，块 id 跨组重叠（同一块分属不同组的一层）。</div></div>`;
     case 'packed': return `<div class="dia">
       <p style="font-size:12px;color:#c3cee0;margin-bottom:6px">packed：所有组叠进同一 slab，每层在块内有字节 <code>offset</code>，块步长 <code>block_stride</code>。</p>
@@ -275,11 +482,11 @@ function renderDia(kind, data, step){
       <div class="cap">块 b 的物理地址 = base + b·block_stride + layer_offset。层页大小不同也能共存。</div></div>`;
     case 'swa': return `<div class="dia">
       <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">滑窗：<span class="wtok out">×</span> 窗口外（null 块，已释放）· <span class="wtok in">t</span> 窗口内 · <span class="wtok cur">▸</span> 当前 token</p>
-      <div class="winrow">${'<span class="wtok out">'+(step%2?'×':'×')+'</span>'.repeat(6)}<span class="wtok in">t</span><span class="wtok in">t</span><span class="wtok cur">▸</span></div>
+      <div class="winrow">${'<span class="wtok out">×</span>'.repeat(6)}<span class="wtok in">t</span><span class="wtok in">t</span><span class="wtok cur">▸</span></div>
       <div class="cap">窗口固定保留最近 N 个 token 的 KV；更早的块从 BlockTable 中换成 null 块并归还块池。</div></div>`;
     case 'mla': return `<div class="dia">
       <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">MLA 每 token 缓存 = 压缩潜在 <code>kv_lora</code>(512) + RoPE <code>k_rope</code>(64)，num_kv_heads=1。</p>
-      <div class="dimrow"><span class="dim">kv_lora <b>512</b></span><span class="dim">k_rope <b>64</b></span></div>
+      <div class="dimrow"><span class="dim">kv_lora <b>512</b></span><span class="arrow">+</span><span class="dim">k_rope <b>64</b></span></div>
       <div class="cap">head_size=576；fp8_ds_mla 下每 token 656B（V3）或 584B（V4，含 8B fp8 scale）。</div></div>`;
     case 'mamba': return `<div class="dia">
       <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">Mamba 每块存一段状态（conv + ssm），非 token 化 KV。</p>
@@ -288,8 +495,8 @@ function renderDia(kind, data, step){
     case 'hybrid_groups': return `<div class="dia">
       <p style="font-size:12px;color:#c3cee0;margin-bottom:8px">一组 BlockPool、多组 block table：</p>
       <div class="chaintable">
-        <div class="chainrow"><span class="k">group0</span><span class="v hl">Mamba</span><span class="v">block table 0</span></div>
-        <div class="chainrow"><span class="k">group1</span><span class="v hl">FullAttn</span><span class="v">block table 1</span></div>
+        <div class="chainrow"><span class="k">group0</span><span class="v hl">Mamba</span><span class="v">→ block table 0</span></div>
+        <div class="chainrow"><span class="k">group1</span><span class="v hl">FullAttn</span><span class="v">→ block table 1</span></div>
         <div class="chainrow"><span class="k">pool</span><span class="v">KVCacheBlock[0..N]（共享）</span></div>
       </div>
       <div class="cap">块 id 由 BlockPool 全局分配，但各组各自记录自己的块序列。</div></div>`;
@@ -306,49 +513,88 @@ function renderDia(kind, data, step){
   }
 }
 
+// Mapping demos keep their own step state keyed by a unique element id. Each
+// instance renders into a real DOM node (#mm-N) so "上一步/下一步" updates the
+// visible block, not a detached element.
+const mmState = {};
 function renderMapping(m){
   const steps = m.steps;
   const reqKeys = Object.keys(steps[0].requests);
-  let si = 0;
-  const wrap = document.createElement('div');
-  function tableHtml(){
-    const st = steps[si];
+  const id = 'mm-' + Math.random().toString(36).slice(2,8);
+  const state = { si:0, steps, reqKeys, m, id };
+  mmState[id] = state;
+  state.isNewAt = function(rid,pos){
+    if(state.si===0) return true;
+    const prev=steps[state.si-1].requests[rid];
+    const p=prev&&prev.slot_map?prev.slot_map[pos]:null;
+    return !p || p.slot<0;
+  };
+  state.chainHtml = function(){
+    const st = steps[state.si];
+    return `<div class="mchain">`+reqKeys.map((rid)=>{
+      const info = st.requests[rid] || {slot_map:[], computed:0};
+      const sm = info.slot_map || [];
+      const last = sm.length? sm[sm.length-1] : null;
+      const toks = sm.map(s=>`<span class="ctok ${state.isNewAt(rid,s.pos)?'new':''}" title="pos ${s.pos}">${s.pos}</span>`).join('');
+      const path = last ? `<div class="cpath">
+          <span class="pn">pos <b>${last.pos}</b></span><span class="pconn">→</span>
+          <span class="pn">mgr 块 <b>${last.manager_block_id}</b></span><span class="pconn">→</span>
+          <span class="pn">kernel 块 <b>${last.kernel_block_id}</b></span><span class="pconn">→</span>
+          <span class="pn slot">slot <b>${last.slot}</b></span></div>` : '';
+      return `<div class="creq">
+        <div class="chead">请求 <b style="color:var(--gpu)">${esc(rid)}</b> · computed ${info.computed} tokens · 路径取最后写入的 token</div>
+        <div class="ctoks">${toks}</div>${path}</div>`;
+    }).join('')+`</div>`;
+  };
+  state.tableHtml = function(){
+    const st = steps[state.si];
     let h = `<tr><th>req</th><th>pos</th><th>mgr blk</th><th>kernel blk</th><th>slot</th></tr>`;
     let rows='';
     for(const rid of reqKeys){
-      for(const sm of st.requests[rid].slot_map){
-        const isNew = sm.slot>=0 && (si===0 || !(steps[si-1].requests[rid]||{}).slot_map || !(steps[si-1].requests[rid].slot_map[sm.pos]||{}).slot===sm.slot);
+      for(const sm of (st.requests[rid]||{slot_map:[]}).slot_map || []){
+        const isNew = state.isNewAt(rid,sm.pos);
         rows+=`<tr><td style="color:var(--gpu)">${esc(rid)}</td><td>${sm.pos}</td>
-          <td>${sm.manager_block_id}</td><td>${sm.kernel_block_id}</td>
-          <td class="slot">${sm.slot}</td></tr>`;
+          <td>${sm.manager_block_id}</td>
+          <td class="${isNew?'hl':''}">${sm.kernel_block_id}</td>
+          <td class="slot${isNew?' hl':''}">${sm.slot}</td></tr>`;
       }
     }
     return `<table class="slottab">${h}${rows}</table>`;
-  }
-  function render(){
-    wrap.innerHTML = `<div class="mmap blk">
-      <div class="mctrl">
-        <button ${si<=0?'disabled':''} onclick="mmStep(-1)">‹ 上一步</button>
-        <button ${si>=steps.length-1?'disabled':''} onclick="mmStep(1)">下一步 ›</button>
-        <span style="font-size:12px;color:var(--muted)">调度步 <b>${si}</b>/${steps.length-1}
-          · block_size=${m.block_size} · kernel_block_size=${m.kernel_block_size} · bpk=${m.bpk}</span>
+  };
+  state.inner = function(){
+    const si = state.si; const st = steps[si];
+    return `<div class="mctrl">
+        <button ${si<=0?'disabled':''} onclick="mmStep('${id}',-1)">‹ 上一步</button>
+        <button ${si>=steps.length-1?'disabled':''} onclick="mmStep('${id}',1)">下一步 ›</button>
+        <span class="mstep">调度步 <b>${si}</b>/${steps.length-1} · block_size=${m.block_size} · kernel_block_size=${m.kernel_block_size} · bpk=${m.bpk}</span>
       </div>
-      ${tableHtml()}
-      <div class="cap">物理 slot 直接索引 num-blocks-first 张量的块维：slot = kernel_block_id·kernel_bs + offset。</div>
-    </div>`;
-  }
-  window.mmStep = function(d){ si=Math.max(0,Math.min(steps.length-1,si+d)); render(); };
-  render();
-  return wrap.innerHTML;
+      ${state.chainHtml()}
+      ${state.tableHtml()}
+      <div class="cap">黄色 = 本步新写入（相对上一步新增）。物理 slot 直接索引 num-blocks-first 张量的块维：slot = kernel_block_id·kernel_bs + offset。</div>`;
+  };
+  return `<div class="mmap blk" id="${id}">${state.inner()}</div>`;
 }
+window.mmStep = function(id,d){
+  const s = mmState[id]; if(!s) return;
+  s.si = Math.max(0, Math.min(s.steps.length-1, s.si+d));
+  const el = document.getElementById(id);
+  if(el) el.innerHTML = s.inner();
+};
 
-// ---------------- boot ----------------
+/* ---------- boot ---------- */
 parseHash();
 render();
+document.getElementById('menuBtn').addEventListener('click', ()=>{
+  const o=document.getElementById('outline');
+  if(o.classList.contains('open')) closeOutline(); else openMenu();
+});
 document.addEventListener('keydown', e=>{
   if(e.target && e.target.matches && e.target.matches('input,select,textarea')) return;
-  if(e.key==='ArrowRight') goSection(curSec+1);
-  else if(e.key==='ArrowLeft') goSection(curSec-1);
+  if(e.key==='ArrowRight') goSectionTo(curCh,curSec+1);
+  else if(e.key==='ArrowLeft') goSectionTo(curCh,curSec-1);
+  else if(e.key==='ArrowDown') goChapter(curCh+1);
+  else if(e.key==='ArrowUp') goChapter(curCh-1);
+  else if(e.key==='Escape') closeOutline();
 });
 window.addEventListener('hashchange', ()=>{ parseHash(); render(); });
 </script>

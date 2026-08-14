@@ -46,6 +46,10 @@ def build_mapping_demo() -> dict[str, Any]:
     step = 0
     while sched.has_requests() and step <= 8:
         so = sched.schedule()
+        # Stop once nothing is scheduled: the running requests have finished, so
+        # a further step would be an empty frame (nothing to demonstrate).
+        if not so.num_scheduled_tokens:
+            break
 
         # Per-request manager block ids (from the real block pool).
         infos: dict[str, dict[str, Any]] = {}

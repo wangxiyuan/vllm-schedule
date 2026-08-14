@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from layout.mapping import build_mapping_demo
-from layout.models import build_all_snapshots
+from layout.models import build_all_snapshots, build_memory_series
 
 
 def P(md: str) -> dict[str, Any]:
@@ -42,6 +42,34 @@ def CALL(md: str) -> dict[str, Any]:
     return {"t": "callout", "md": md}
 
 
+# Per-section learning objective shown in the teaching "story" card. Keyed by
+# section title; sections without an entry fall back to the title only.
+GOALS: dict[str, str] = {
+    "为什么 KV cache 要分块": "理解不缓存历史的代价（O(n²)），以及分块（PagedAttention）如何用固定大小的块管理 K/V、省显存、抗碎片。",
+    "两个块层级：manager block 与 kernel block": "分清 manager block 与 kernel block 两层，掌握 bpk 展开（b → b·bpk+k）。",
+    "真实映射：pos → block → slot": "在真实 Scheduler 分配上，把一个 token 位置展开成 manager 块 → kernel 块 → 物理 slot。",
+    "原始分配与 KVCacheTensor": "认识到 KV cache 的物理本质是一段段 int8 原始字节，由 KVCacheTensor 描述 size / shared_by / offset / block_stride。",
+    "num-blocks-first 与 L·B·H·N·C 维度顺序": "能区分逻辑形状 (B,H,N,2D) 与物理排列 stride_order，理解「num-blocks-first = B 在最外层」。",
+    "多组共享池（general case）": "理解多个 kv_cache_group 如何按 layer 下标共享同一批物理池。",
+    "packed 打包布局（DeepSeek-V4）": "理解页大小不统一时的 packed 打包：单 slab、逐层 offset、block_stride。",
+    "页填充与量化缩放": "了解页对齐（page_size_padded + as_strided）与量化每 token 缩放字节的计入。",
+    "GQA Full Attention（Llama-7B）": "看懂 GQA 每 token 字节的来源：num_kv_heads × head_size × 2(K+V) × 2B。",
+    "Sliding Window（Mistral-7B）": "理解滑窗为何让每请求 KV 有上界 O(window)，窗口外块被替换为 null 并释放。",
+    "MLA（DeepSeek-V3/R1）": "理解 MLA 压缩潜在 + k_rope 如何把每 token 缓存压到数百字节。",
+    "DeepSeek Sparse Attention（DSA）": "明白稀疏只改变『注意哪些 token』，KV cache 布局与 MLA 完全相同。",
+    "Hybrid：Mamba + Full Attention（Jamba）": "看懂 Mamba 状态块与注意力块如何共存、分属多个 kv_cache_group。",
+    "六模型排布对比": "一眼对比六种模型的布局类型、每 token 字节与并发容量差异。",
+    "kv_cache_group 与块大小统一": "掌握 scheduler_block_size(LCM) 与 hash_block_size(GCD) 两个对齐粒度。",
+    "一组 BlockPool，多组 BlockTable": "理解所有组共享同一 BlockPool、但各自维护独立 block table。",
+    "DeepSeek-V4 的 UniformType 打包": "理解 UniformTypeKVCacheSpecs 分组 + packed 打包的组合。",
+    "完整链路": "把 pos → manager 块 → kernel 块 → slot → 地址 串成一条完整链路。",
+    "跨层 KV sharing 与量化缩放": "了解层别名共享（kv_sharing_target_layer_name）与量化缩放张量的切分。",
+    "从模型 config 到 KV cache 张量": "用真实规划代码在同一显存下对比 6 种结构的 KV cache 结果。",
+    "显存预算 → 并发容量": "看懂同一模型在不同显存预算下的块容量增长，以及 GQA / MLA / Mamba 的爬升速率差异。",
+    "读图要点": "抓住读对比图的关键：每 token 字节、num_blocks、packed vs num-blocks-first 分水岭。",
+}
+
+
 def MAPPING() -> dict[str, Any]:
     return {"t": "mapping"}
 
@@ -50,17 +78,22 @@ def KVCOMPARE(models: list[str]) -> dict[str, Any]:
     return {"t": "kvcfg_compare", "models": models}
 
 
+def MEMSERIES() -> dict[str, Any]:
+    return {"t": "memseries"}
+
+
 def _ch(ch_id: str, title: str, color: str, sections: list[dict[str, Any]]) -> dict[str, Any]:
     return {"id": ch_id, "title": title, "color": color, "sections": sections}
 
 
 def _sec(title: str, body: list[dict[str, Any]]) -> dict[str, Any]:
-    return {"title": title, "body": body}
+    return {"title": title, "body": body, "goal": GOALS.get(title, "")}
 
 
 def build_page() -> dict[str, Any]:
     mapping = build_mapping_demo()
     models = {s["name"]: s for s in build_all_snapshots()}
+    memseries = build_memory_series()
 
     chapters = [
         # ------------------------------------------------------------------
@@ -232,11 +265,15 @@ def build_page() -> dict[str, Any]:
         ]),
         # ------------------------------------------------------------------
         _ch("compare", "实战对比", "#22d3ee", [
-            _sec("从模型 config 到 KV cache 张量", [
-                P("一个模型结构 → 一组 kv_cache_group + 一个张量计划。下面用真实 vLLM 规划代码"
-                  "（`get_kv_cache_groups` + `get_kv_cache_config_from_groups`）对 6 种结构"
-                  "在同一 8 GiB 显存、block_size=16 下算出结果。"),
-                KVCOMPARE(["llama", "mistral", "deepseek_v3", "dsa", "jamba", "deepseek_v4"]),
+            _sec("显存预算 → 并发容量", [
+                P("KV cache 的 `num_blocks` 近似 = `显存 ÷ 每块字节`，随显存预算**线性增长**；"
+                  "但不同模型因每 token 字节不同，爬升速率差很多。下面用真实规划代码"
+                  "（`get_kv_cache_groups` + `get_kv_cache_config_from_groups`）算出 3 种代表性模型"
+                  "（GQA / MLA / Mamba hybrid）在 2–16 GiB 显存下的块容量。"),
+                MEMSERIES(),
+                P("**读法**：GQA 每 token 4096 B，容量爬得最慢；MLA 靠压缩潜在，同样显存能塞"
+                  "数倍块；Mamba 存固定状态，斜率又不同。想让并发翻倍，MLA 只需加一点显存，"
+                  "GQA 则要加很多。"),
             ]),
             _sec("读图要点", [
                 P("**每 token 字节是核心差异**：GQA 贵在 KV head 数多；MLA 靠压缩潜在把单 token "
@@ -249,4 +286,4 @@ def build_page() -> dict[str, Any]:
         ]),
     ]
 
-    return {"chapters": chapters, "data": {"models": models, "mapping": mapping}}
+    return {"chapters": chapters, "data": {"models": models, "mapping": mapping, "memseries": memseries}}
