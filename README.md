@@ -23,10 +23,16 @@ uv run python sched_demo.py -s spec
 uv run python sched_demo.py --list
 
 # 生成 KV Cache 排布与逻辑↔物理映射页（独立页面，与调度页无关）
-uv run python kv_layout.py -o kv_cache_layout.html
+# 该页依赖可导入 vllm 的 Python（数据来自本地 vllm 源码树的规划代码），
+# 用 build.sh 自动探测（同级 vllm 源码树 / VLLM_PYTHON 环境变量）：
+./build.sh                       # -> kv_cache_layout.html
+./build.sh -o out.html           # 其余参数透传给 kv_layout.py
+# 兜底（若环境恰好装好 vllm）：
+# uv run python kv_layout.py -o kv_cache_layout.html
 ```
 
-用浏览器打开生成的 HTML 即可交互（上一步 / 下一步 / 自动播放 / 拖拽进度条）。
+用浏览器打开生成的 HTML 即可交互：调度页支持上一步 / 下一步 / 自动播放 / 拖拽进度条；
+排布页支持左侧大纲 / 底部翻页 / demo 内调度步切换。
 
 ## 场景
 
@@ -123,6 +129,13 @@ uv run python kv_layout.py -o kv_cache_layout.html
   `num_blocks`、kv_cache_groups、张量计划并渲染。
 - **逻辑→物理链路**：`pos → block_id → kernel_id → slot → 地址`，用真实 Scheduler 分配 +
   worker 展开逻辑复算 slot_mapping 交互展示。
+  - 映射 demo 是**真实调度**的逐步回放（开启 chunked prefill、`max_num_batched_tokens=6`）：
+    **第 0 步 = A 的 prefill 独占帧** → `A decode + B prefill` → `B decode`，每步带阶段标签，
+    黄色高亮本步新写入的 token（相对上一步），第 0 步即"初始 prefill 一次写入"；
+  - 每个请求配有**物理 slot 网格**：每格 = 一个物理 slot（格内 token pos、下方 slot 号），
+    与下方 slot 映射表及公式 `slot = kernel_block_id·kernel_bs + offset` 一一对应；
+  - 页面本身是**讲义式排版**：左侧章节目录（6 章 21 节）、顶部面包屑、底部翻页器、
+    `#章节id/节号` 深链直达（浏览器后退/前进可用）、键盘无障碍与 `prefers-reduced-motion` 支持。
 
 数据来源：`layout/models.py`（真实 vLLM 规划代码）、`layout/mapping.py`（真实调度分配）。
 
@@ -136,10 +149,11 @@ uv run python kv_layout.py -o kv_cache_layout.html
 ├── tensor_view.py       # CPU/GPU 双世界张量提取
 ├── template.html        # 调度页渲染模板（内嵌 CSV+JS，无外部依赖）
 ├── kv_layout.py         # KV Cache 排布页 CLI 入口
+├── build.sh             # 排布页一键构建（自动探测可导入 vllm 的 Python）
 └── layout/
     ├── template.html    # 排布页渲染模板（复用 template.html 的主题 CSS）
     ├── models.py        # 真实 get_kv_cache_groups + get_kv_cache_config_from_groups
-    ├── mapping.py       # 真实调度分配 + worker 展开 → slot_mapping
+    ├── mapping.py       # 真实调度分配（chunked prefill 3 步回放）+ worker 展开 → slot_mapping
     └── sections.py      # 章节/小节内容组装
 and scenarios/
     ├── common.py        # 共享 scheduler/request 构造（支持多种特性 flag）
@@ -159,4 +173,4 @@ and scenarios/
   `AsyncScheduler` 的 `next_decode_eligible_step` cadence 依赖该 flag 才生效）。
 - GPU 张量是**模拟**的：不真正分配 CUDA 内存，而是用调度器 CPU 侧的
   `CpuGpuBuffer` numpy 值 + 标注 `device/shape/dtype` 来呈现。
-- 环境要求：CPU 版 PyTorch + vLLM 源码（见 AGENTS.md 的环境搭建）。
+- 环境要求：CPU 版 PyTorch + vLLM 源码（排布页构建由 `./build.sh` 自动探测，见快速开始）。

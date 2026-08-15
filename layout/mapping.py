@@ -30,11 +30,13 @@ def build_mapping_demo() -> dict[str, Any]:
     kernel_block_size = 2  # bpk = block_size // kernel_block_size = 2
     sched = make_scheduler(
         max_num_seqs=2,
-        max_num_batched_tokens=32,
+        # = A 的 prompt 长度（6）：A 的 prefill 恰好独占第 0 步。
+        # 配合 chunked prefill，调度步变成：A prefill → B prefill(+A decode) → B decode。
+        max_num_batched_tokens=6,
         max_model_len=32,
         block_size=block_size,
         num_blocks=8,
-        enable_chunked_prefill=False,
+        enable_chunked_prefill=True,
         policy="fcfs",
     )
     req_a = make_request("A", prompt_len=6, max_tokens=2, prompt_token=1)
@@ -99,9 +101,22 @@ def build_mapping_demo() -> dict[str, Any]:
                 "slot_map": slot_map,
             }
 
+        # 本步阶段标签：请求在"步前 computed" < prompt_len 说明这步跑的是 prefill。
+        # schedule() 已把本步 token 计入 num_computed_tokens，所以步前 = 现在 - 本步数。
+        prompt_lens = {"A": len(req_a.prompt_token_ids), "B": len(req_b.prompt_token_ids)}
+        phase_parts: list[str] = []
+        for rid in ("A", "B"):
+            n = so.num_scheduled_tokens.get(rid, 0)
+            if n:
+                req = sched.requests[rid]
+                is_prefill = (req.num_computed_tokens - n) < prompt_lens[rid]
+                phase_parts.append(f"{rid} {'prefill' if is_prefill else 'decode'}")
+        phase = " + ".join(phase_parts)
+
         steps.append(
             {
                 "step": step,
+                "phase": phase,
                 "block_size": block_size,
                 "kernel_block_size": kernel_block_size,
                 "bpk": block_size // kernel_block_size,

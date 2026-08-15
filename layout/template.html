@@ -13,6 +13,7 @@ __THEME_CSS__
    Reading flow: 导航大纲 → 本节学习目标 → 图文讲解 → 底部翻页。 */
 
 /* ---- layout shell ---- */
+:root{--tb-offset:64px}   /* 顶栏高度基准：outline 的 sticky top 与之对齐 */
 .kv-shell{display:flex;gap:18px;align-items:flex-start;margin-top:14px}
 .kv-main{flex:1;min-width:0}
 
@@ -23,17 +24,13 @@ __THEME_CSS__
 .topbar .brand{display:flex;flex-direction:column;min-width:0}
 .topbar h1{font-size:16.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topbar .sub{font-size:10.5px;color:var(--faint);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.topbar .crumb{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap}
+.topbar .crumb{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap;margin-left:auto}
 .topbar .crumb b{color:var(--txt);font-weight:600}
 .topbar .crumb .tick{color:var(--faint)}
-.progress{flex:1;min-width:120px;max-width:260px;margin-left:auto}
-.progress .ptrack{height:6px;border-radius:5px;background:var(--panel3);overflow:hidden;border:1px solid var(--line)}
-.progress .pfill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:5px;transition:width .3s ease}
-.progress .plab{font-size:10px;color:var(--faint);margin-top:3px;font-variant-numeric:tabular-nums}
 .menu-btn{display:none;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:13px}
 
 /* ---- outline sidebar ---- */
-.outline{width:264px;flex-shrink:0;position:sticky;top:64px;max-height:calc(100vh - 80px);overflow-y:auto;
+.outline{width:264px;flex-shrink:0;position:sticky;top:var(--tb-offset);max-height:calc(100vh - 80px);overflow-y:auto;
   border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);display:flex;flex-direction:column}
 .outline .ol-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:11px;color:var(--faint);letter-spacing:.05em;font-weight:600}
 .outline .ol-head .olsteps{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -58,30 +55,27 @@ __THEME_CSS__
 .olsec .stitle{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---- story (teaching card) ---- */
-.story{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
-.story .shead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel))}
-.story .shead .ch{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:12px;color:#fff;letter-spacing:.04em;white-space:nowrap}
-.story .shead .secnum{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
-.story .shead h2{font-size:16.5px;flex:1;min-width:0;line-height:1.3}
-.story .goal{display:flex;gap:10px;padding:10px 16px;background:rgba(79,143,247,.06);border-top:1px solid rgba(79,143,247,.15)}
-.story .goal .glabel{flex-shrink:0;font-size:10.5px;font-weight:700;color:var(--accent2);padding-top:2px;letter-spacing:.05em}
-.story .goal .gtext{font-size:12.5px;color:#c3cee0;line-height:1.6}
-.story .goal b{color:var(--txt)}
-.story .goal code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+/* 类名加 l- 前缀：避开注入的 scheduler 主题同名类（.story），不再靠覆盖顺序兜底 */
+.lstory{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
+.lstory .shead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel2),var(--panel))}
+.lstory .shead .ch{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:12px;color:#fff;letter-spacing:.04em;white-space:nowrap}
+.lstory .shead h2{font-size:16.5px;flex:1;min-width:0;line-height:1.3}
+.lstory .goal{display:flex;gap:10px;padding:10px 16px;background:rgba(79,143,247,.06);border-top:1px solid rgba(79,143,247,.15)}
+.lstory .goal .glabel{flex-shrink:0;font-size:10.5px;font-weight:700;color:var(--accent2);padding-top:2px;letter-spacing:.05em}
+.lstory .goal .gtext{font-size:12.5px;color:#c3cee0;line-height:1.6}
+.lstory .goal b{color:var(--txt)}
+.lstory .goal code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
 
 /* ---- body blocks ---- */
 .body{display:flex;flex-direction:column;gap:14px}
-.blk{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;
-  /* The shared scheduler theme defines .blk as a 24x24 KV-block square
-     (display:flex;width:24px;height:24px;font-size:9px;color:#fff). Neutralise
-     those leaked properties so .blk here is a full-width content card. */
-  display:block;width:auto;height:auto;font-size:13px;font-weight:400;color:inherit;
-  position:static;align-items:initial;justify-content:initial;text-align:left}
-.blk code,.story code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
-.blk p{color:#c3cee0;font-size:13px;line-height:1.75;margin:0}
-.blk p + p{margin-top:10px}
-.blk b{color:var(--txt)}
-.blk h5{font-size:12px;color:var(--accent2);margin:14px 0 8px;font-weight:600;letter-spacing:.02em}
+/* 内容卡：类名 l- 前缀，避开 scheduler 主题的 .blk（24x24 KV 方块） */
+.lblk{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+.lblk code,.lstory code{background:var(--panel3);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+.lblk p{color:#c3cee0;font-size:13px;line-height:1.75;margin:0}
+.lblk p + p{margin-top:10px}
+.lblk b{color:var(--txt)}
+/* 正文小节标题统一用 h3（story 是 h2，不再跳级）；h3 可能出现在 .lblk / .mcfg 内 */
+.kv-main h3{font-size:12px;color:var(--accent2);margin:14px 0 8px;font-weight:600;letter-spacing:.02em}
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
 .tbl th,.tbl td{border:1px solid var(--line);padding:7px 10px;text-align:left}
 .tbl th{background:var(--panel2);color:var(--txt);font-weight:600}
@@ -136,8 +130,8 @@ __THEME_CSS__
 .chainrow .v.hl{color:var(--warn);font-weight:700}
 .conv{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:11.5px}
 .conv_var{display:inline-block;padding:2px 6px;border-radius:6px;border:1px solid var(--line);background:var(--panel3);font-family:ui-monospace,monospace;font-size:11px;color:var(--accent2)}
-.bar{display:block;background:#0a0e16;border-radius:4px;height:14px;position:relative;overflow:hidden;font-size:9.5px}
-.bar .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--cpu),var(--accent2))}
+.gbar{display:block;background:#0a0e16;border-radius:4px;height:14px;position:relative;overflow:hidden;font-size:9.5px}
+.gbar .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--cpu),var(--accent2))}
 .winrow{display:flex;gap:2px;align-items:center;font-size:10px;flex-wrap:wrap}
 .wtok{width:28px;height:28px;border-radius:5px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px}
 .wtok.out{background:linear-gradient(135deg,#3a1220,#2a0c16);border-color:#6b2a3a;color:var(--null)}
@@ -185,7 +179,25 @@ table.cmp{width:100%;border-collapse:collapse;font-size:12px;min-width:760px}
 .slottab th,.slottab td{border:1px solid var(--line);padding:5px 8px;text-align:center;font-family:ui-monospace,monospace}
 .slottab th{background:var(--panel2);color:var(--muted);font-size:10.5px}
 .slottab td.slot{color:var(--warn);font-weight:700}
-.slottab td.hl{background:rgba(255,197,61,.12)}
+.slottab td.hl{background:rgba(255,197,61,.12);font-weight:700}
+/* mapping demo: 物理 slot 网格（每格 = 一个物理 slot，格内 pos、下方 slot 号） */
+.mkgrid{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.mkblk{border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#0a0e16}
+.mkbhead{font-size:9.5px;color:var(--muted);text-align:center;padding:2px 6px;border-bottom:1px solid var(--line);background:#0d1220;white-space:nowrap}
+.mkbhead b{color:var(--txt)}
+.mkbody{display:flex}
+.mkslot{width:30px;height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-right:1px solid var(--line);font-size:8.5px;line-height:1.1;background:#121a2b}
+.mkslot:last-child{border-right:none}
+.mkslot i{font-style:normal;font-weight:700;color:#fff}
+.mkslot b{font-weight:400;color:rgba(255,255,255,.35);font-variant-numeric:tabular-nums}
+.mkslot.empty{background:#0a0e16}
+.mkslot.empty i{color:transparent}
+.mkslot.empty b{color:rgba(255,255,255,.22)}
+.mkslot.new{background:rgba(255,197,61,.16)}
+.mkslot.new i{color:#ffe1a0}
+.mkslot.cur{background:rgba(53,208,127,.22);outline:2px solid var(--ok);outline-offset:-2px}
+.mkslot.cur i{color:#7dffc4}
+.mgridlab{font-size:10px;color:var(--faint);margin-top:10px}
 
 /* ---- pager ---- */
 .pager{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
@@ -198,6 +210,7 @@ table.cmp{width:100%;border-collapse:collapse;font-size:12px;min-width:760px}
 .pager .psep{color:var(--faint);font-size:11px;white-space:nowrap}
 
 /* ---- responsive ---- */
+@media (min-width:921px){.topbar{flex-wrap:nowrap}}   /* 桌面端顶栏不换行，outline 的 sticky top 才稳定 */
 @media (max-width:920px){
   .outline{position:fixed;left:0;top:0;bottom:0;z-index:70;width:280px;max-height:none;border-radius:0;transform:translateX(-105%);transition:transform .2s ease;box-shadow:0 0 40px rgba(0,0,0,.5)}
   .outline.open{transform:translateX(0)}
@@ -224,10 +237,6 @@ table.cmp{width:100%;border-collapse:collapse;font-size:12px;min-width:760px}
   <div class="crumb" id="crumb">
     <span id="crumbCh">—</span><span class="tick">/</span><span id="crumbSec">—</span>
   </div>
-  <div class="progress">
-    <div class="ptrack"><div class="pfill" id="pfill"></div></div>
-    <div class="plab" id="plab">—</div>
-  </div>
 </div>
 
 <div class="kv-shell">
@@ -237,7 +246,7 @@ table.cmp{width:100%;border-collapse:collapse;font-size:12px;min-width:760px}
   </aside>
 
   <main class="kv-main" id="main">
-    <section class="story" id="story" aria-live="polite"></section>
+    <section class="lstory" id="story" aria-live="polite"></section>
     <div class="body" id="body"></div>
     <nav class="pager" id="pager" aria-label="章节翻页"></nav>
   </main>
@@ -256,7 +265,6 @@ function fmtBytes(n){ if(n>=1e9) return (n/1e9).toFixed(1)+' GB'; if(n>=1e6) ret
 const activeChapter = () => PAGE.chapters[curCh];
 const activeSection  = () => activeChapter().sections[curSec];
 const totalSecs = () => PAGE.chapters.reduce((a,c)=>a+c.sections.length,0);
-const visitedCount = () => visited.size;
 
 function currentHash(){ return activeChapter().id+'/'+curSec; }
 
@@ -265,9 +273,6 @@ function renderTopbar(){
   const ch=activeChapter(), s=activeSection();
   document.getElementById('crumbCh').innerHTML = `<b style="color:${ch.color}">${esc(ch.title)}</b>`;
   document.getElementById('crumbSec').textContent = `第 ${curSec+1}/${ch.sections.length} 节`;
-  const done = visitedCount(), total = totalSecs();
-  document.getElementById('pfill').style.width = (done/total*100).toFixed(1)+'%';
-  document.getElementById('plab').textContent = `已读 ${done}/${total} 节`;
 }
 function renderOutline(){
   const t = document.getElementById('oltree');
@@ -276,7 +281,8 @@ function renderOutline(){
     const secs = c.sections.map((s,si)=>{
       const key = ci+'/'+si; const isCur = ci===curCh&&si===curSec; const isDone = visited.has(key);
       return `<button class="olsec ${isCur?'active':''} ${isDone?'done':''}"
-        onclick="goSectionTo(${ci},${si})" aria-current="${isCur?'page':'false'}">
+        onclick="goSectionTo(${ci},${si})"${isCur?' aria-current="page"':''}
+        title="${esc(s.title)}">
         <span class="num">${si+1}</span><span class="stitle">${esc(s.title)}</span></button>`;
     }).join('');
     return `<div class="olch ${open?'open':''}">
@@ -296,7 +302,6 @@ function renderStory(){
   document.getElementById('story').innerHTML = `
     <div class="shead">
       <span class="ch" style="background:${ch.color}">${esc(ch.title)}</span>
-      <span class="secnum">${curSec+1}/${ch.sections.length}</span>
       <h2>${esc(s.title)}</h2>
     </div>${goal}`;
 }
@@ -312,7 +317,7 @@ function renderPager(){
       <div class="dir">下一节 ›</div><div class="pt">${nextSec?esc(nextSec.t):'已是最后'}</div></button>`;
 }
 function renderBody(){ document.getElementById('body').innerHTML = activeSection().body.map(renderBlock).join(''); }
-function render(){ renderTopbar(); renderOutline(); renderStory(); renderBody(); renderPager(); }
+function render(){ renderTopbar(); renderOutline(); renderStory(); renderBody(); renderPager(); pruneMM(); }
 
 /* ---------- navigation ---------- */
 function goSectionTo(ci,si){
@@ -328,25 +333,37 @@ function toggleCh(ci){
   const el=document.querySelectorAll('.olch')[ci]; el.classList.toggle('open');
   const btn=el.querySelector('.olch-row'); btn.setAttribute('aria-expanded', el.classList.contains('open'));
 }
-function syncHash(){ try{ history.replaceState(null,'','#'+currentHash()); }catch(e){} }
+function syncHash(){
+  const h = '#'+currentHash();
+  if(location.hash === h) return;                     // 避免重复入栈
+  try{ history.pushState(null,'',h); }catch(e){}      // pushState：后退/前进可回到上一节
+}
 function parseHash(){
   const h=location.hash.replace(/^#/,''); if(!h) return;
   const [cid,si]=h.split('/');
   const ci=PAGE.chapters.findIndex(c=>c.id===cid);
   if(ci>=0){ curCh=ci; curSec=(si!=null)?(+si||0):0; visited.add(ci+'/'+curSec); }
 }
-function closeOutline(){ document.getElementById('outline').classList.remove('open'); document.getElementById('menuBtn').setAttribute('aria-expanded','false'); }
-function openMenu(){ document.getElementById('outline').classList.add('open'); document.getElementById('menuBtn').setAttribute('aria-expanded','true'); }
+function closeOutline(){
+  const o=document.getElementById('outline'); o.classList.remove('open');
+  const b=document.getElementById('menuBtn');
+  b.setAttribute('aria-expanded','false'); b.setAttribute('aria-label','打开目录');
+}
+function openMenu(){
+  const o=document.getElementById('outline'); o.classList.add('open');
+  const b=document.getElementById('menuBtn');
+  b.setAttribute('aria-expanded','true'); b.setAttribute('aria-label','关闭目录');
+}
 
 /* ---------- block renderers ---------- */
 function renderBlock(b){
   switch(b.t){
-    case 'p': return `<div class="blk"><p>${md(b.md)}</p></div>`;
+    case 'p': return `<div class="lblk"><p>${md(b.md)}</p></div>`;
     case 'callout': return `<div class="callout">${md(b.md)}</div>`;
-    case 'code': return `<div class="blk"><span class="coderef">
+    case 'code': return `<div class="lblk"><span class="coderef">
         <span class="f">${esc(b.file)}</span><span class="ln">:${b.line}</span>
         ${b.label?`<span class="lab">· ${esc(b.label)}</span>`:''}<span class="src">源码参考</span></span></div>`;
-    case 'table': return `<div class="blk"><table class="tbl">
+    case 'table': return `<div class="lblk"><table class="tbl">
         <thead><tr>${b.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
         <tbody>${b.rows.map(r=>`<tr>${r.map(c=>`<td>${md(String(c))}</td>`).join('')}</tr>`).join('')}</tbody>
         </table></div>`;
@@ -368,11 +385,11 @@ function renderKvcfg(m, compact=false){
     return `<div class="gcard">
       <div class="ghead"><span class="gkind">${esc(g.kind)}</span>
         <span class="gmeta">${g.num_layers} 层 · block_size=${g.block_size} · 每 token ${g.per_token_bytes} B · 每块 ${fmtBytes(g.page_size_bytes)}</span></div>
-      <div class="bar"><div class="fill" style="width:${widthPct}%"></div></div>
+      <div class="gbar"><div class="fill" style="width:${widthPct}%"></div></div>
       <div style="margin-top:6px">${g.layer_names.slice(0,12).map(l=>`<span class="glayer">${esc(l.split('.').slice(-2).join('.'))}</span>`).join('')}${g.num_layers>12?`<span class="glayer">…+${g.num_layers-12}</span>`:''}</div>
     </div>`;
   }).join('');
-  const packedHtml = m.layout==='packed' ? `<h5>物理张量计划（packed 单 slab）</h5>
+  const packedHtml = m.layout==='packed' ? `<h3>物理张量计划（packed 单 slab）</h3>
     <div class="tplan"><div class="trow">block_stride = <b>${fmtBytes(m.tensors[0].block_stride)}</b> · 每个 block 内逐层偏移：</div>
       <div class="slab" style="height:34px">${m.tensors.slice(0,16).map((t,i)=>`<div class="seg" style="left:${(t.offset/m.tensors[0].block_stride*100).toFixed(1)}%;width:${Math.max(1.5,(t.page_size/m.tensors[0].block_stride*100)).toFixed(1)}%" title="${esc(t.shared_by[0])} @ ${t.offset}B，宽 ${fmtBytes(t.page_size)}"></div>`).join('')}</div>
       <div class="cap">每个竖条 = 一个字节偏移处的层组（offset → offset+最宽层页）。不同组（不同颜色）的层可在同一偏移重叠：一个物理 block 同一时刻只属于一个组，故各组布局可复用同一块区间。</div>
@@ -387,7 +404,7 @@ function renderKvcfg(m, compact=false){
       <span class="mtag ${tagCls}">${tagTxt}</span></div>
     <div class="kpis">${kpis}</div>
     <div class="note" style="font-size:12px;color:var(--muted)">${md(m.note)}</div>
-    <h5>KV Cache Groups</h5>
+    <h3>KV Cache Groups</h3>
     <div class="grow">${groupsHtml}</div>
     ${packedHtml}
   </div>`;
@@ -413,7 +430,7 @@ function renderCompare(modelNames){
       <td class="c-note">${md(m.note)}</td>
     </tr>`;
   }).join('');
-  return `<div class="blk"><div class="cmpbox"><table class="cmp">
+  return `<div class="lblk"><div class="cmpbox"><table class="cmp">
     <thead><tr><th>模型</th><th>布局</th><th>num_blocks</th><th>KV 张量</th><th>组数</th><th>每 token 字节</th><th>关键点</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div></div>`;
@@ -438,7 +455,7 @@ function renderMemSeries(){
         <div class="mval">${last.mem_gib} GiB 时 ${last.num_blocks.toLocaleString()} 块</div></td>
     </tr>`;
   }).join('');
-  return `<div class="blk"><div class="memcmp">
+  return `<div class="lblk"><div class="memcmp">
     <div class="memnote" style="font-size:12px;color:var(--muted);margin-bottom:10px">每个模型在同一组显存预算（${esc(mems.join(' / '))} GiB）下的 <code>num_blocks</code>。块容量随显存线性增长，斜率 ≈ 1 ÷ 每 token 字节。</div>
     <div class="cmpbox"><table class="cmp">
       <thead><tr><th>模型</th><th>每 token 峰值</th>${mems.map(m=>`<th>${m} GiB</th>`).join('')}<th>容量（16 GiB）</th></tr></thead>
@@ -517,17 +534,43 @@ function renderDia(kind, data, step){
 // instance renders into a real DOM node (#mm-N) so "上一步/下一步" updates the
 // visible block, not a detached element.
 const mmState = {};
+// 清理已不在 DOM 中的 mapping demo 状态，避免多次翻页后内存残留
+function pruneMM(){ for(const id in mmState){ if(!document.getElementById(id)) delete mmState[id]; } }
 function renderMapping(m){
   const steps = m.steps;
   const reqKeys = Object.keys(steps[0].requests);
   const id = 'mm-' + Math.random().toString(36).slice(2,8);
   const state = { si:0, steps, reqKeys, m, id };
   mmState[id] = state;
+  // 第 0 步 = 初始 prefill：全部 token 一次写入，都视为"本步新写入"（黄色），
+  // 这样 prefill 阶段在视觉上一眼可辨；图例文案会在第 0 步切换为"初始 prefill"。
   state.isNewAt = function(rid,pos){
     if(state.si===0) return true;
     const prev=steps[state.si-1].requests[rid];
     const p=prev&&prev.slot_map?prev.slot_map[pos]:null;
     return !p || p.slot<0;
+  };
+  // 每个请求的 kernel 块网格：每格 = 一个物理 slot（格内 pos、下方 slot 号）。
+  state.gridHtml = function(rid, info, sm){
+    const kbs = state.m.kernel_block_size;
+    const byKb = {};
+    for(const s of sm){ (byKb[s.kernel_block_id] = byKb[s.kernel_block_id]||[]).push(s); }
+    const last = sm.length? sm[sm.length-1] : null;
+    const blocks = (info.kernel_blocks||[]).map(kb=>{
+      const occ = byKb[kb]||[];
+      const cells = [];
+      for(let off=0; off<kbs; off++){
+        const slot = kb*kbs+off;
+        const s = occ.find(o=>o.slot>=0 && o.slot%kbs===off);
+        cells.push(s
+          ? `<span class="mkslot ${state.isNewAt(rid,s.pos)?'new':''} ${last&&s.pos===last.pos?'cur':''}"><i>${s.pos}</i><b>${slot}</b></span>`
+          : `<span class="mkslot empty"><i>·</i><b>${slot}</b></span>`);
+      }
+      return `<div class="mkblk"><div class="mkbhead">kernel 块 <b>${kb}</b></div><div class="mkbody">${cells.join('')}</div></div>`;
+    }).join('');
+    return blocks
+      ? `<div class="mgridlab">物理 slot 网格：格内 = token pos，下方 = 物理 slot 号</div><div class="mkgrid">${blocks}</div>`
+      : '';
   };
   state.chainHtml = function(){
     const st = steps[state.si];
@@ -535,15 +578,15 @@ function renderMapping(m){
       const info = st.requests[rid] || {slot_map:[], computed:0};
       const sm = info.slot_map || [];
       const last = sm.length? sm[sm.length-1] : null;
-      const toks = sm.map(s=>`<span class="ctok ${state.isNewAt(rid,s.pos)?'new':''}" title="pos ${s.pos}">${s.pos}</span>`).join('');
+      const toks = sm.map((s,idx)=>`<span class="ctok ${state.isNewAt(rid,s.pos)?'new':''} ${idx===sm.length-1?'cur':''}" title="pos ${s.pos}">${s.pos}</span>`).join('');
       const path = last ? `<div class="cpath">
           <span class="pn">pos <b>${last.pos}</b></span><span class="pconn">→</span>
           <span class="pn">mgr 块 <b>${last.manager_block_id}</b></span><span class="pconn">→</span>
           <span class="pn">kernel 块 <b>${last.kernel_block_id}</b></span><span class="pconn">→</span>
-          <span class="pn slot">slot <b>${last.slot}</b></span></div>` : '';
+          <span class="pn slot">slot <b>${last.slot}</b></span></div>` : (sm.length===0 ? `<div class="cpath"><span class="pn">等待调度（尚未分配块）</span></div>` : '');
       return `<div class="creq">
-        <div class="chead">请求 <b style="color:var(--gpu)">${esc(rid)}</b> · computed ${info.computed} tokens · 路径取最后写入的 token</div>
-        <div class="ctoks">${toks}</div>${path}</div>`;
+        <div class="chead">请求 <b style="color:var(--gpu)">${esc(rid)}</b> · computed ${info.computed} tokens · 路径取最后写入的 token（绿色）</div>
+        <div class="ctoks">${toks}</div>${path}${state.gridHtml(rid, info, sm)}</div>`;
     }).join('')+`</div>`;
   };
   state.tableHtml = function(){
@@ -566,13 +609,13 @@ function renderMapping(m){
     return `<div class="mctrl">
         <button ${si<=0?'disabled':''} onclick="mmStep('${id}',-1)">‹ 上一步</button>
         <button ${si>=steps.length-1?'disabled':''} onclick="mmStep('${id}',1)">下一步 ›</button>
-        <span class="mstep">调度步 <b>${si}</b>/${steps.length-1} · block_size=${m.block_size} · kernel_block_size=${m.kernel_block_size} · bpk=${m.bpk}</span>
+        <span class="mstep" role="status">调度步 <b>${si}</b>/${steps.length-1} · ${st.phase?esc(st.phase)+' · ':''}block_size=${m.block_size} · kernel_block_size=${m.kernel_block_size} · bpk=${m.bpk}</span>
       </div>
       ${state.chainHtml()}
       ${state.tableHtml()}
-      <div class="cap">黄色 = 本步新写入（相对上一步新增）。物理 slot 直接索引 num-blocks-first 张量的块维：slot = kernel_block_id·kernel_bs + offset。</div>`;
+      <div class="cap">${si===0?'黄色 = 初始 prefill 一次写入的全部 token（第 0 步为初始分配，无上一步对比）。':'黄色 = 本步新写入（相对上一步新增）。'}物理 slot 直接索引 num-blocks-first 张量的块维：slot = kernel_block_id·kernel_bs + offset。</div>`;
   };
-  return `<div class="mmap blk" id="${id}">${state.inner()}</div>`;
+  return `<div class="mmap lblk" id="${id}">${state.inner()}</div>`;
 }
 window.mmStep = function(id,d){
   const s = mmState[id]; if(!s) return;
@@ -596,7 +639,10 @@ document.addEventListener('keydown', e=>{
   else if(e.key==='ArrowUp') goChapter(curCh-1);
   else if(e.key==='Escape') closeOutline();
 });
-window.addEventListener('hashchange', ()=>{ parseHash(); render(); });
+window.addEventListener('hashchange', ()=>{
+  parseHash(); render();
+  const story=document.getElementById('story'); if(story) story.scrollIntoView({block:'start',behavior:reduced?'auto':'smooth'});
+});
 </script>
 </body>
 </html>
